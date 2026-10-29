@@ -4,7 +4,15 @@ title: "KAMD: Kinetic Accelerated Molecular Dynamics for Amber, GROMACS and Open
 type: software
 version: 0.1.0
 date-released: 2026-10-29
+doi: 10.5281/zenodo.23755858
 repository-code: "https://github.com/larryhuang98/kamd"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23755858
+    description: "Concept DOI: all versions (resolves to the latest release)"
+  - type: doi
+    value: 10.5281/zenodo.23755860
+    description: "Version 0.1.0"
 license-url: "https://github.com/larryhuang98/kamd/blob/main/LICENSE.md"
 authors:
   - family-names: Huang

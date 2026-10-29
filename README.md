@@ -1,5 +1,7 @@
 # KAMD — Kinetic Accelerated Molecular Dynamics
 
+[![DOI](https://zenodo.org/badge/1438016791.svg)](https://doi.org/10.5281/zenodo.23755858)
+
 KAMD speeds up conformational sampling of biomolecules. It does not modify the
 potential energy surface and needs no collective variables. Every
 `pseudobd_cycles` MD steps, KAMD checks the translational momentum of user-defined
@@ -72,6 +74,20 @@ If you use KAMD, please cite the method paper and this software (see [`CITATION.
   pages   = {4116--4129},
   year    = {2026},
   doi     = {10.1021/acs.jcim.5c03093}
+}
+```
+
+Software (concept DOI, always resolves to the latest release; version 0.1.0 is
+[10.5281/zenodo.23755860](https://doi.org/10.5281/zenodo.23755860)):
+
+```bibtex
+@software{kamd_software,
+  author    = {Huang, Zhen and Duan, Yong and Luo, Ray and Wei, Haixin},
+  title     = {{KAMD: Kinetic Accelerated Molecular Dynamics for Amber, GROMACS and OpenMM}},
+  publisher = {Zenodo},
+  year      = {2026},
+  doi       = {10.5281/zenodo.23755858},
+  url       = {https://github.com/larryhuang98/kamd}
 }
 ```
 
