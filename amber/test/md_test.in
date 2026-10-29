@@ -1,0 +1,20 @@
+KAMD test: 29,467-atom solvated protein, four reference groups
+&cntrl
+   imin=0, irest=1, ntx=5,
+   ntpr=500, ntwx=0, ntwr=3000, nstlim=3000,
+   iwrap=1, dt=0.002, ntt=3, gamma_ln=5,
+   temp0=355, ig=1060,
+   ntp=1, barostat=2, ntc=2, ntf=2,
+   ntb=2, cut=8.0,
+/
+&kamd
+   pseudobd_cycles = 250,
+   shell_cut       = 5.0,
+   surface_cut     = 3.0,
+   nzero_crossings = 2,
+   refer_mask(1) = "@20-96",
+   refer_mask(2) = "@285-339",
+   refer_mask(3) = "@366-482",
+   refer_mask(4) = "@568-611",
+   solvent_mask  = "@623-29467",
+/

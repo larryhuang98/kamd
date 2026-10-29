@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kamd-openmm"
+version = "0.1.0"
+description = "Kinetically Accelerated Molecular Dynamics (KAMD) for OpenMM"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Zhen Huang" }, { name = "Haixin Wei" }, { name = "Ray Luo" }]
+dependencies = ["numpy", "scipy", "openmm>=8.2"]
+
+[project.optional-dependencies]
+amber = ["parmed"]
+test = ["pytest"]
+
+[tool.setuptools]
+packages = ["kamd_openmm"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kamd_openmm"]

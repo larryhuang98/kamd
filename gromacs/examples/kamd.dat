@@ -1,0 +1,11 @@
+; KAMD input for GROMACS (same settings as ambers/kamd/test/kamd/Run_test.sh)
+index           = index.ndx
+refer-groups    = dom1 dom2 dom3 dom4
+solvent-group   = bath
+pseudobd-cycles = 250
+nzero-crossings = 2
+shell-cut       = 0.5     ; nm
+surface-cut     = 0.3     ; nm
+temperature     = 355
+seed            = 1060
+log             = kamd.log

@@ -1,0 +1,27 @@
+name: gromacs
+on:
+  push:
+    paths: ["gromacs/**", ".github/workflows/gromacs.yml"]
+  pull_request:
+    paths: ["gromacs/**", ".github/workflows/gromacs.yml"]
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04          # GCC 13, CMake 3.28
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: download GROMACS 2026.4
+        run: |
+          curl -sSfO https://ftp.gromacs.org/gromacs/gromacs-2026.4.tar.gz
+          echo "58eda60979b124fcf9dff8b1b63cedfbc72fdb36d99e921dc1bdc310571098b6  gromacs-2026.4.tar.gz" | sha256sum -c
+          tar xzf gromacs-2026.4.tar.gz
+      - name: apply the KAMD patch
+        run: cd gromacs-2026.4 && patch -p1 < ../gromacs/kamd-gromacs-2026.4.patch
+      - name: configure (CPU only)
+        run: cmake -S gromacs-2026.4 -B build -DGMX_GPU=OFF -DGMX_BUILD_OWN_FFTW=ON -DCMAKE_BUILD_TYPE=Release
+      - name: build gmx and the KAMD unit tests
+        run: cmake --build build -j 4 --target gmx mdrun-kamd-test
+      - name: unit tests
+        run: build/bin/mdrun-kamd-test
+      - name: mdrun lists -kamd
+        run: build/bin/gmx mdrun -h 2>&1 | grep -- -kamd

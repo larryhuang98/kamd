@@ -1,0 +1,2000 @@
+diff --git a/src/gromacs/mdrun/CMakeLists.txt b/src/gromacs/mdrun/CMakeLists.txt
+index d751b34..52916b0 100644
+--- a/src/gromacs/mdrun/CMakeLists.txt
++++ b/src/gromacs/mdrun/CMakeLists.txt
+@@ -34,6 +34,7 @@
+ add_library(mdrun INTERFACE)
+ gmx_add_libgromacs_sources(
+     binary_information.cpp
++    kamd.cpp
+     legacymdrunoptions.cpp
+     legacysimulator.cpp
+     md.cpp
+@@ -90,6 +91,6 @@ install(FILES simulationinputhandle.h
+         DESTINATION include/gromacs/mdrun)
+ 
+ if (BUILD_TESTING)
+-# TODO import this from src/programs/mdrun/tests
+-#    add_subdirectory(tests)
++# TODO import the other tests from src/programs/mdrun/tests
++    add_subdirectory(tests)
+ endif()
+diff --git a/src/gromacs/mdrun/kamd.cpp b/src/gromacs/mdrun/kamd.cpp
+new file mode 100644
+index 0000000..1b8bf1f
+--- /dev/null
++++ b/src/gromacs/mdrun/kamd.cpp
+@@ -0,0 +1,1093 @@
++/*
++ * This file is part of the GROMACS molecular simulation package.
++ *
++ * KAMD (Kinetically Accelerated Molecular Dynamics) for GROMACS.
++ * Port of the pmemd.cuda implementation by Zhen Huang, Haixin Wei and Ray Luo (UC Irvine).
++ *
++ * GROMACS is free software; you can redistribute it and/or modify it under the terms of the
++ * GNU Lesser General Public License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++#include "gmxpre.h"
++
++#include "kamd.h"
++
++#include <cctype>
++#include <cmath>
++
++#include <algorithm>
++#include <chrono>
++#include <fstream>
++#include <map>
++#include <set>
++#include <sstream>
++
++#include "gromacs/math/units.h"
++#include "gromacs/mdtypes/inputrec.h"
++#include "gromacs/random/tabulatednormaldistribution.h"
++#include "gromacs/random/threefry.h"
++#include "gromacs/utility/exceptions.h"
++#include "gromacs/utility/fatalerror.h"
++#include "gromacs/utility/stringutil.h"
++
++namespace gmx
++{
++
++namespace
++{
++
++// ------------------------------------------------------------------------ input parsing
++std::string normalizeKey(std::string k)
++{
++    std::transform(k.begin(),
++                   k.end(),
++                   k.begin(),
++                   [](unsigned char c)
++                   { return c == '_' ? '-' : static_cast<char>(std::tolower(c)); });
++    return k;
++}
++
++std::string trim(const std::string& s)
++{
++    const auto b = s.find_first_not_of(" \t\r\n");
++    if (b == std::string::npos)
++    {
++        return "";
++    }
++    const auto e = s.find_last_not_of(" \t\r\n");
++    return s.substr(b, e - b + 1);
++}
++
++std::vector<std::string> splitWords(const std::string& s)
++{
++    std::istringstream       is(s);
++    std::vector<std::string> out;
++    std::string              w;
++    while (is >> w)
++    {
++        out.push_back(w);
++    }
++    return out;
++}
++
++std::map<std::string, std::string> readKeyValueFile(const std::string& fileName)
++{
++    std::ifstream in(fileName);
++    if (!in)
++    {
++        GMX_THROW(FileIOError(formatString("KAMD: cannot open input file '%s'", fileName.c_str())));
++    }
++    std::map<std::string, std::string> kv;
++    std::string                        line;
++    int                                lineNumber = 0;
++    while (std::getline(in, line))
++    {
++        lineNumber++;
++        const auto c = line.find_first_of(";#");
++        if (c != std::string::npos)
++        {
++            line.erase(c);
++        }
++        line = trim(line);
++        if (line.empty())
++        {
++            continue;
++        }
++        const auto eq = line.find('=');
++        if (eq == std::string::npos)
++        {
++            GMX_THROW(InvalidInputError(formatString(
++                    "KAMD: line %d of '%s' is not 'key = value'", lineNumber, fileName.c_str())));
++        }
++        const std::string key = normalizeKey(trim(line.substr(0, eq)));
++        if (kv.count(key))
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: key '%s' given twice", key.c_str())));
++        }
++        kv[key] = trim(line.substr(eq + 1));
++    }
++    return kv;
++}
++
++//! Minimal .ndx reader: name -> 0-based atom indices.
++std::vector<std::pair<std::string, std::vector<int>>> readIndexFile(const std::string& fileName)
++{
++    std::ifstream in(fileName);
++    if (!in)
++    {
++        GMX_THROW(FileIOError(formatString("KAMD: cannot open index file '%s'", fileName.c_str())));
++    }
++    std::vector<std::pair<std::string, std::vector<int>>> groups;
++    std::string                                           line;
++    while (std::getline(in, line))
++    {
++        line = trim(line);
++        if (line.empty())
++        {
++            continue;
++        }
++        if (line.front() == '[')
++        {
++            const auto e = line.find(']');
++            groups.emplace_back(trim(line.substr(1, e == std::string::npos ? std::string::npos : e - 1)),
++                                std::vector<int>());
++            continue;
++        }
++        if (groups.empty())
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: '%s' is not an index file", fileName.c_str())));
++        }
++        for (const auto& w : splitWords(line))
++        {
++            size_t pos  = 0;
++            long   atom = 0;
++            try
++            {
++                atom = std::stol(w, &pos);
++            }
++            catch (const std::exception&)
++            {
++                pos = 0;
++            }
++            if (pos != w.size() || atom < 1)
++            {
++                GMX_THROW(InvalidInputError(
++                        formatString("KAMD: invalid atom number '%s' in group [ %s ] of '%s'",
++                                     w.c_str(),
++                                     groups.back().first.c_str(),
++                                     fileName.c_str())));
++            }
++            groups.back().second.push_back(static_cast<int>(atom - 1));
++        }
++    }
++    return groups;
++}
++
++std::vector<int> findGroup(const std::vector<std::pair<std::string, std::vector<int>>>& ndx,
++                           const std::string&                                           name,
++                           const std::string&                                           what)
++{
++    for (const auto& g : ndx)
++    {
++        if (g.first == name)
++        {
++            return g.second;
++        }
++    }
++    for (const auto& g : ndx)
++    {
++        if (equalCaseInsensitive(g.first, name))
++        {
++            return g.second;
++        }
++    }
++    GMX_THROW(InvalidInputError(formatString(
++            "KAMD: %s group '%s' not found in the index file", what.c_str(), name.c_str())));
++}
++
++std::vector<int> sortedUnique(std::vector<int> v)
++{
++    std::sort(v.begin(), v.end());
++    v.erase(std::unique(v.begin(), v.end()), v.end());
++    return v;
++}
++
++bool intersects(const std::vector<int>& a, const std::vector<int>& b)
++{
++    std::vector<int> out;
++    std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(out));
++    return !out.empty();
++}
++
++// ------------------------------------------------------------------------ geometry
++struct Box
++{
++    double a[3][3]; // rows are box vectors (GROMACS convention)
++    double inv[3][3];
++    bool   rect;
++    double L[3];
++};
++
++Box makeBox(const matrix box)
++{
++    Box b;
++    for (int i = 0; i < 3; i++)
++    {
++        for (int j = 0; j < 3; j++)
++        {
++            b.a[i][j] = box[i][j];
++        }
++        b.L[i] = box[i][i];
++    }
++    b.rect = (box[YY][XX] == 0 && box[ZZ][XX] == 0 && box[ZZ][YY] == 0 && box[XX][YY] == 0
++              && box[XX][ZZ] == 0 && box[YY][ZZ] == 0);
++    // inverse of the lower-triangular box matrix (row vectors): frac = d * inv
++    const double(*m)[3] = b.a;
++    const double det    = m[0][0] * m[1][1] * m[2][2];
++    GMX_RELEASE_ASSERT(det > 0, "KAMD: invalid box");
++    double inv[3][3] = { { 0 } };
++    inv[0][0]        = 1 / m[0][0];
++    inv[1][1]        = 1 / m[1][1];
++    inv[2][2]        = 1 / m[2][2];
++    inv[1][0]        = -m[1][0] / (m[0][0] * m[1][1]);
++    inv[2][1]        = -m[2][1] / (m[1][1] * m[2][2]);
++    inv[2][0]        = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / det;
++    for (int i = 0; i < 3; i++)
++    {
++        for (int j = 0; j < 3; j++)
++        {
++            b.inv[i][j] = inv[i][j];
++        }
++    }
++    return b;
++}
++
++inline double minImageDist2(const Box& b, const double* xi, const double* xj)
++{
++    double d[3] = { xi[0] - xj[0], xi[1] - xj[1], xi[2] - xj[2] };
++    if (b.rect)
++    {
++        for (int k = 0; k < 3; k++)
++        {
++            d[k] -= b.L[k] * std::round(d[k] / b.L[k]);
++        }
++        return d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
++    }
++    // fractional rounding, same convention as kKAMD.h: f = d * inv, f -= round(f), d = f * box
++    double f[3];
++    for (int j = 0; j < 3; j++)
++    {
++        f[j] = d[0] * b.inv[0][j] + d[1] * b.inv[1][j] + d[2] * b.inv[2][j];
++        f[j] -= std::round(f[j]);
++    }
++    double r2 = 0;
++    for (int j = 0; j < 3; j++)
++    {
++        const double dj = f[0] * b.a[0][j] + f[1] * b.a[1][j] + f[2] * b.a[2][j];
++        r2 += dj * dj;
++    }
++    return r2;
++}
++
++/*! \brief For every query atom, the nearest point atom with r < cut.
++ *
++ * Returns, per query, the position in \p points of the nearest atom (-1 if none).
++ * Ties keep the earlier entry of \p points (pmemd breaks ties toward the lower group).
++ */
++std::vector<int> nearestWithin(const std::vector<int>&    query,
++                               const std::vector<int>&    points,
++                               const std::vector<double>& xyz,
++                               const Box&                 box,
++                               double                     cut)
++{
++    std::vector<int> best(query.size(), -1);
++    if (query.empty() || points.empty())
++    {
++        return best;
++    }
++    const double cut2    = cut * cut;
++    int          n[3]    = { 0, 0, 0 };
++    bool         useGrid = box.rect;
++    for (int d = 0; d < 3 && useGrid; d++)
++    {
++        n[d]    = static_cast<int>(std::floor(box.L[d] / cut));
++        useGrid = n[d] >= 3;
++    }
++    if (!useGrid)
++    {
++#pragma omp parallel for schedule(static)
++        for (size_t q = 0; q < query.size(); q++)
++        {
++            double bestR2 = cut2;
++            for (size_t p = 0; p < points.size(); p++)
++            {
++                const double r2 = minImageDist2(box, &xyz[3 * query[q]], &xyz[3 * points[p]]);
++                if (r2 < bestR2)
++                {
++                    bestR2  = r2;
++                    best[q] = static_cast<int>(p);
++                }
++            }
++        }
++        return best;
++    }
++    auto cellOf = [&](const double* x, int* c)
++    {
++        for (int d = 0; d < 3; d++)
++        {
++            double w = x[d] - box.L[d] * std::floor(x[d] / box.L[d]);
++            c[d]     = std::min(n[d] - 1, std::max(0, static_cast<int>(w / box.L[d] * n[d])));
++        }
++    };
++    const int        ncell = n[0] * n[1] * n[2];
++    std::vector<int> cellStart(ncell + 1, 0), cellOfPoint(points.size()), sorted(points.size());
++    for (size_t p = 0; p < points.size(); p++)
++    {
++        int c[3];
++        cellOf(&xyz[3 * points[p]], c);
++        cellOfPoint[p] = (c[2] * n[1] + c[1]) * n[0] + c[0];
++        cellStart[cellOfPoint[p] + 1]++;
++    }
++    for (int c = 0; c < ncell; c++)
++    {
++        cellStart[c + 1] += cellStart[c];
++    }
++    {
++        std::vector<int> fill(cellStart.begin(), cellStart.end() - 1);
++        for (size_t p = 0; p < points.size(); p++) // stable: keeps the order of points within a cell
++        {
++            sorted[fill[cellOfPoint[p]]++] = static_cast<int>(p);
++        }
++    }
++#pragma omp parallel for schedule(static)
++    for (size_t q = 0; q < query.size(); q++)
++    {
++        const double* xq = &xyz[3 * query[q]];
++        int           c[3];
++        cellOf(xq, c);
++        double bestR2 = cut2;
++        int    bestP  = -1;
++        for (int dz = -1; dz <= 1; dz++)
++        {
++            const int cz = (c[2] + dz + n[2]) % n[2];
++            for (int dy = -1; dy <= 1; dy++)
++            {
++                const int cy = (c[1] + dy + n[1]) % n[1];
++                for (int dx = -1; dx <= 1; dx++)
++                {
++                    const int cx   = (c[0] + dx + n[0]) % n[0];
++                    const int cell = (cz * n[1] + cy) * n[0] + cx;
++                    for (int s = cellStart[cell]; s < cellStart[cell + 1]; s++)
++                    {
++                        const int    p  = sorted[s];
++                        const double r2 = minImageDist2(box, xq, &xyz[3 * points[p]]);
++                        if (r2 < bestR2 || (r2 == bestR2 && bestP >= 0 && p < bestP))
++                        {
++                            bestR2 = r2;
++                            bestP  = p;
++                        }
++                    }
++                }
++            }
++        }
++        best[q] = bestP;
++    }
++    return best;
++}
++
++double dot3(const double* a, const double* b)
++{
++    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
++}
++
++} // namespace
++
++// ------------------------------------------------------------------------ parameters
++KamdParameters readKamdParameters(const std::string& fileName, const t_inputrec& ir, int numAtoms)
++{
++    auto           kv = readKeyValueFile(fileName);
++    KamdParameters p;
++    auto           take = [&kv](const std::string& key) -> std::string
++    {
++        auto it = kv.find(key);
++        if (it == kv.end())
++        {
++            return "";
++        }
++        std::string v = it->second;
++        kv.erase(it);
++        return v;
++    };
++    auto toInt = [](const std::string& s, const char* key)
++    {
++        try
++        {
++            size_t pos;
++            int    v = std::stoi(s, &pos);
++            if (pos != s.size())
++            {
++                throw std::invalid_argument(s);
++            }
++            return v;
++        }
++        catch (const std::exception&)
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: '%s' is not an integer for %s", s.c_str(), key)));
++        }
++    };
++    auto toDouble = [](const std::string& s, const char* key)
++    {
++        try
++        {
++            size_t pos;
++            double v = std::stod(s, &pos);
++            if (pos != s.size())
++            {
++                throw std::invalid_argument(s);
++            }
++            return v;
++        }
++        catch (const std::exception&)
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: '%s' is not a number for %s", s.c_str(), key)));
++        }
++    };
++
++    std::string v;
++    if (!(v = take("pseudobd-cycles")).empty())
++    {
++        p.pseudobdCycles = toInt(v, "pseudobd-cycles");
++    }
++    if (!(v = take("nzero-crossings")).empty())
++    {
++        p.nzeroCrossings = toInt(v, "nzero-crossings");
++    }
++    if (!(v = take("shell-cut")).empty())
++    {
++        p.shellCut = toDouble(v, "shell-cut");
++    }
++    if (!(v = take("surface-cut")).empty())
++    {
++        p.surfaceCut = toDouble(v, "surface-cut");
++    }
++    if (!(v = take("membrane-cut")).empty())
++    {
++        p.membraneCut = toDouble(v, "membrane-cut");
++    }
++    if (!(v = take("membrane-axis")).empty())
++    {
++        const std::string a = normalizeKey(v);
++        p.membraneAxis      = (a == "x" || a == "1")   ? 0
++                              : (a == "y" || a == "2") ? 1
++                              : (a == "z" || a == "3") ? 2
++                                                       : -2;
++        if (p.membraneAxis == -2)
++        {
++            GMX_THROW(InvalidInputError(
++                    formatString("KAMD: membrane-axis = %s is invalid (x, y or z)", v.c_str())));
++        }
++    }
++    if (!(v = take("temperature")).empty())
++    {
++        p.temperature = toDouble(v, "temperature");
++    }
++    if (!(v = take("seed")).empty())
++    {
++        size_t pos = 0;
++        try
++        {
++            p.seed = std::stoll(v, &pos);
++        }
++        catch (const std::exception&)
++        {
++            pos = 0;
++        }
++        if (pos != v.size())
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: '%s' is not an integer for seed", v.c_str())));
++        }
++    }
++    if (!(v = take("log")).empty())
++    {
++        p.logFile = v;
++    }
++    if (!(v = take("diag")).empty())
++    {
++        const std::string a = normalizeKey(v);
++        p.writeDiag         = (a == "yes" || a == "true" || a == "1");
++    }
++
++    const std::string indexFile    = take("index");
++    const auto        groupNames   = splitWords(take("refer-groups"));
++    const std::string solventName  = take("solvent-group");
++    const std::string membraneName = take("membrane-group");
++    const auto        linkWords    = splitWords(take("refer-link"));
++    const auto        regionWords  = splitWords(take("region-type"));
++
++    if (!kv.empty())
++    {
++        GMX_THROW(InvalidInputError(formatString(
++                "KAMD: unknown key '%s' in '%s'", kv.begin()->first.c_str(), fileName.c_str())));
++    }
++
++    // ---- checks mirroring pmemd's &kamd validation
++    if (p.pseudobdCycles <= 0)
++    {
++        GMX_THROW(InvalidInputError("KAMD: pseudobd-cycles must be > 0"));
++    }
++    if (p.nzeroCrossings <= 0)
++    {
++        GMX_THROW(InvalidInputError("KAMD: nzero-crossings must be > 0"));
++    }
++    if (p.shellCut <= 0 || p.surfaceCut <= 0)
++    {
++        GMX_THROW(InvalidInputError("KAMD: shell-cut and surface-cut must be > 0"));
++    }
++    if (p.surfaceCut > p.shellCut)
++    {
++        GMX_THROW(InvalidInputError("KAMD: surface-cut must be <= shell-cut"));
++    }
++    if (indexFile.empty())
++    {
++        GMX_THROW(InvalidInputError("KAMD: 'index = file.ndx' is required"));
++    }
++    if (groupNames.empty())
++    {
++        GMX_THROW(InvalidInputError("KAMD: refer-groups must list at least one index group"));
++    }
++    if (solventName.empty())
++    {
++        GMX_THROW(InvalidInputError("KAMD: solvent-group is required"));
++    }
++
++    const auto ndx = readIndexFile(indexFile);
++    const int  ng  = static_cast<int>(groupNames.size());
++    for (const auto& name : groupNames)
++    {
++        p.groups.push_back(sortedUnique(findGroup(ndx, name, "reference")));
++        p.groupNames.push_back(name);
++        if (p.groups.back().empty())
++        {
++            GMX_THROW(InvalidInputError(formatString("KAMD: reference group '%s' is empty", name.c_str())));
++        }
++    }
++    p.solvent = sortedUnique(findGroup(ndx, solventName, "solvent"));
++    if (!membraneName.empty())
++    {
++        p.membrane = sortedUnique(findGroup(ndx, membraneName, "membrane"));
++    }
++
++    p.link.assign(ng, 0);
++    if (!linkWords.empty())
++    {
++        if (static_cast<int>(linkWords.size()) != ng)
++        {
++            GMX_THROW(InvalidInputError("KAMD: refer-link needs one entry per reference group"));
++        }
++        for (int g = 0; g < ng; g++)
++        {
++            p.link[g] = toInt(linkWords[g], "refer-link");
++            if (p.link[g] < 0 || p.link[g] > ng)
++            {
++                GMX_THROW(InvalidInputError(formatString(
++                        "KAMD: refer-link(%d) = %d is out of range [0, %d]", g + 1, p.link[g], ng)));
++            }
++            if (p.link[g] == g + 1)
++            {
++                GMX_THROW(InvalidInputError(
++                        formatString("KAMD: refer-link(%d) cannot reference its own group", g + 1)));
++            }
++        }
++    }
++    p.region.assign(ng, KamdRegion::Solution);
++    if (!regionWords.empty())
++    {
++        if (static_cast<int>(regionWords.size()) != ng)
++        {
++            GMX_THROW(InvalidInputError("KAMD: region-type needs one entry per reference group"));
++        }
++        for (int g = 0; g < ng; g++)
++        {
++            const int r = toInt(regionWords[g], "region-type");
++            if (r != 1 && r != 2)
++            {
++                GMX_THROW(InvalidInputError(formatString(
++                        "KAMD: region-type(%d) = %d is invalid (1=solution, 2=transmembrane)", g + 1, r)));
++            }
++            p.region[g] = static_cast<KamdRegion>(r);
++        }
++    }
++    const bool haveTM = std::any_of(p.region.begin(),
++                                    p.region.end(),
++                                    [](KamdRegion r) { return r == KamdRegion::Transmembrane; });
++    if (haveTM)
++    {
++        if (p.membrane.empty())
++        {
++            GMX_THROW(InvalidInputError(
++                    "KAMD: membrane-group is required when any region-type is 2"));
++        }
++        if (p.membraneAxis < 0)
++        {
++            GMX_THROW(InvalidInputError(
++                    "KAMD: membrane-axis (x, y or z) is required when any region-type is 2"));
++        }
++        if (p.membraneCut <= 0)
++        {
++            GMX_THROW(InvalidInputError("KAMD: membrane-cut must be > 0"));
++        }
++    }
++
++    std::vector<int> allRef;
++    for (int g = 0; g < ng; g++)
++    {
++        for (int h = g + 1; h < ng; h++)
++        {
++            if (intersects(p.groups[g], p.groups[h]))
++            {
++                GMX_THROW(
++                        InvalidInputError(formatString("KAMD: reference groups %d and %d overlap; "
++                                                       "reference groups must not overlap",
++                                                       g + 1,
++                                                       h + 1)));
++            }
++        }
++        allRef.insert(allRef.end(), p.groups[g].begin(), p.groups[g].end());
++    }
++    allRef = sortedUnique(allRef);
++    if (intersects(allRef, p.solvent))
++    {
++        GMX_THROW(InvalidInputError("KAMD: reference groups and solvent bath overlap"));
++    }
++    if (intersects(allRef, p.membrane))
++    {
++        GMX_THROW(InvalidInputError("KAMD: reference groups and membrane bath overlap"));
++    }
++    if (intersects(p.solvent, p.membrane))
++    {
++        GMX_THROW(InvalidInputError("KAMD: solvent bath and membrane bath overlap"));
++    }
++    for (const auto* list : { &allRef, &p.solvent, &p.membrane })
++    {
++        if (!list->empty() && (list->front() < 0 || list->back() >= numAtoms))
++        {
++            GMX_THROW(InvalidInputError(formatString(
++                    "KAMD: index group atom out of range for a %d-atom system", numAtoms)));
++        }
++    }
++
++    if (p.temperature < 0)
++    {
++        if (ir.opts.ngtc < 1 || ir.opts.ref_t[0] <= 0)
++        {
++            GMX_THROW(InvalidInputError("KAMD: set 'temperature' (no ref-t available)"));
++        }
++        for (int i = 1; i < ir.opts.ngtc; i++)
++        {
++            if (ir.opts.ref_t[i] != ir.opts.ref_t[0])
++            {
++                GMX_THROW(InvalidInputError(
++                        "KAMD: tc-groups have different ref-t; set 'temperature' explicitly"));
++            }
++        }
++        p.temperature = ir.opts.ref_t[0];
++    }
++    if (p.seed == -1)
++    {
++        p.seed = ir.ld_seed;
++    }
++    return p;
++}
++
++// ------------------------------------------------------------------------ first shell
++std::vector<int> kamdFindFirstShell(const KamdParameters& p, ArrayRef<const RVec> x, const matrix box)
++{
++    const Box           b = makeBox(box);
++    std::vector<double> xyz(3 * x.size());
++    for (size_t i = 0; i < x.size(); i++)
++    {
++        for (int d = 0; d < 3; d++)
++        {
++            xyz[3 * i + d] = x[i][d];
++        }
++    }
++    std::vector<int> record(x.size(), 0);
++    const int        ng = static_cast<int>(p.groups.size());
++    for (KamdRegion region : { KamdRegion::Solution, KamdRegion::Transmembrane })
++    {
++        const std::vector<int>& bath = region == KamdRegion::Solution ? p.solvent : p.membrane;
++        const double     assignCut   = region == KamdRegion::Solution ? p.shellCut : p.membraneCut;
++        const double     surfCut = region == KamdRegion::Solution ? p.surfaceCut : p.membraneCut;
++        std::vector<int> ref, refGroup;
++        for (int g = 0; g < ng; g++)
++        {
++            if (p.region[g] == region)
++            {
++                ref.insert(ref.end(), p.groups[g].begin(), p.groups[g].end());
++                refGroup.insert(refGroup.end(), p.groups[g].size(), g);
++            }
++        }
++        if (ref.empty() || bath.empty())
++        {
++            continue;
++        }
++        // bath atom -> group of the nearest reference atom within the assignment cutoff
++        const auto nearestRef = nearestWithin(bath, ref, xyz, b, assignCut);
++        for (size_t k = 0; k < bath.size(); k++)
++        {
++            if (nearestRef[k] >= 0)
++            {
++                record[bath[k]] = refGroup[nearestRef[k]] + 1;
++            }
++        }
++        // reference atom with any bath atom within the surface cutoff
++        const auto nearestBath = nearestWithin(ref, bath, xyz, b, surfCut);
++        for (size_t k = 0; k < ref.size(); k++)
++        {
++            if (nearestBath[k] >= 0)
++            {
++                record[ref[k]] = -(refGroup[k] + 1);
++            }
++        }
++    }
++    return record;
++}
++
++// ------------------------------------------------------------------------ driver
++Kamd::Kamd(KamdParameters parameters, int numAtoms, double timeStep, FILE* fplog) :
++    p_(std::move(parameters)), numAtoms_(numAtoms), timeStep_(timeStep)
++{
++    const int ng = static_cast<int>(p_.groups.size());
++    last_.assign(ng, 0.0);
++    count_.assign(ng, 0);
++    log_ = std::fopen(p_.logFile.c_str(), "w");
++    if (!log_)
++    {
++        GMX_THROW(FileIOError(formatString("KAMD: cannot write '%s'", p_.logFile.c_str())));
++    }
++    std::string sizes;
++    for (int g = 0; g < ng; g++)
++    {
++        sizes += formatString("%s%s(%zu)", g ? " " : "", p_.groupNames[g].c_str(), p_.groups[g].size());
++    }
++    const std::string summary = formatString(
++            "KAMD: %d reference groups [%s], solvent %zu atoms, membrane %zu atoms, "
++            "pseudobd-cycles %d, "
++            "nzero-crossings %d, shell/surface/membrane cut %g/%g/%g nm, T %g K, seed %lld",
++            ng,
++            sizes.c_str(),
++            p_.solvent.size(),
++            p_.membrane.size(),
++            p_.pseudobdCycles,
++            p_.nzeroCrossings,
++            p_.shellCut,
++            p_.surfaceCut,
++            p_.membraneCut,
++            p_.temperature,
++            static_cast<long long>(p_.seed));
++    std::fprintf(log_, "# %s\n", summary.c_str());
++    if (ng == 1)
++    {
++        std::fprintf(
++                log_,
++                "# WARNING: one reference group: its relative momentum is zero up to round-off, so "
++                "resets are driven by floating-point noise (same formula as pmemd). Use >= 2 "
++                "groups.\n");
++    }
++    std::fprintf(log_,
++                 "# step\tevent\tshell_atoms_per_group\tsurface_atoms_per_group\tdirections\n");
++    std::fflush(log_);
++    if (fplog)
++    {
++        std::fprintf(fplog, "\n%s\nKAMD event log: %s\n\n", summary.c_str(), p_.logFile.c_str());
++    }
++}
++
++Kamd::~Kamd()
++{
++    if (log_)
++    {
++        std::fprintf(log_, "# %d resets, %.1f ms total host time in resets\n", numResets_, resetMs_);
++        std::fclose(log_);
++    }
++}
++
++const std::vector<int>& Kamd::globalToLocal(ArrayRef<const int> localToGlobal)
++{
++    g2l_.assign(numAtoms_, -1);
++    if (localToGlobal.empty())
++    {
++        for (int i = 0; i < numAtoms_; i++)
++        {
++            g2l_[i] = i;
++        }
++    }
++    else
++    {
++        for (int l = 0; l < numAtoms_; l++)
++        {
++            g2l_[localToGlobal[l]] = l;
++        }
++    }
++    return g2l_;
++}
++
++void Kamd::setMasses(ArrayRef<const int> localToGlobal, ArrayRef<const real> massLocal)
++{
++    if (!mass_.empty())
++    {
++        return;
++    }
++    mass_.assign(numAtoms_, 0.0);
++    for (int l = 0; l < numAtoms_; l++)
++    {
++        mass_[localToGlobal.empty() ? l : localToGlobal[l]] = massLocal[l];
++    }
++    for (const auto& g : p_.groups)
++    {
++        double m = 0;
++        for (int a : g)
++        {
++            m += mass_[a];
++        }
++        groupMass_.push_back(m);
++    }
++}
++
++bool Kamd::isCheckStep(int64_t stepRel) const
++{
++    return (stepRel + 1) % p_.pseudobdCycles == 0;
++}
++
++bool Kamd::checkMomenta(int64_t /*step*/,
++                        ArrayRef<const int>  localToGlobal,
++                        ArrayRef<const real> massLocal,
++                        ArrayRef<const RVec> v)
++{
++    setMasses(localToGlobal, massLocal);
++    const auto&         g2l = globalToLocal(localToGlobal);
++    const int           ng  = static_cast<int>(p_.groups.size());
++    std::vector<double> mom(3 * ng, 0.0);
++    double              tot[3] = { 0, 0, 0 }, totMass = 0;
++    for (int g = 0; g < ng; g++)
++    {
++        for (int a : p_.groups[g])
++        {
++            for (int d = 0; d < 3; d++)
++            {
++                mom[3 * g + d] += mass_[a] * v[g2l[a]][d];
++            }
++        }
++        for (int d = 0; d < 3; d++)
++        {
++            tot[d] += mom[3 * g + d];
++        }
++        totMass += groupMass_[g];
++    }
++    const double vcom[3] = { tot[0] / totMass, tot[1] / totMass, tot[2] / totMass };
++    bool         all     = true;
++    for (int g = 0; g < ng; g++)
++    {
++        double rel[3];
++        for (int d = 0; d < 3; d++)
++        {
++            rel[d] = mom[3 * g + d] - groupMass_[g] * vcom[d];
++        }
++        if (p_.region[g] == KamdRegion::Transmembrane)
++        {
++            rel[p_.membraneAxis] = 0;
++        }
++        const double s = dot3(rel, vcom);
++        if (s * last_[g] < 0 && count_[g] < p_.nzeroCrossings)
++        {
++            count_[g]++;
++        }
++        last_[g] = s;
++        all      = all && count_[g] >= p_.nzeroCrossings;
++    }
++    return all;
++}
++
++void Kamd::resetVelocities(int64_t              step,
++                           ArrayRef<const int>  localToGlobal,
++                           ArrayRef<const real> massLocal,
++                           ArrayRef<const RVec> xLocal,
++                           ArrayRef<const RVec> f,
++                           const matrix         box,
++                           ArrayRef<RVec>       v)
++{
++    setMasses(localToGlobal, massLocal);
++    const auto&       g2l    = globalToLocal(localToGlobal);
++    const int         ng     = static_cast<int>(p_.groups.size());
++    const int         natoms = numAtoms_;
++    std::vector<RVec> x(natoms);
++#pragma omp parallel for schedule(static)
++    for (int a = 0; a < natoms; a++)
++    {
++        x[a] = xLocal[g2l[a]];
++    }
++    const double kT = c_boltz * p_.temperature;
++
++    const auto t0 = std::chrono::steady_clock::now();
++    // 1. Maxwell-Boltzmann full-step velocities (counter = step, global atom index, as Andersen)
++    std::vector<double> vfull(3 * natoms, 0.0);
++#pragma omp parallel
++    {
++        ThreeFry2x64<0>                       rngAtom(p_.seed, RandomDomain::Other);
++        TabulatedNormalDistribution<real, 14> normalAtom;
++#pragma omp for schedule(static)
++        for (int i = 0; i < natoms; i++)
++        {
++            if (mass_[i] <= 0)
++            {
++                continue;
++            }
++            rngAtom.restart(step, i);
++            normalAtom.reset();
++            const double sd = std::sqrt(kT / mass_[i]);
++            for (int d = 0; d < 3; d++)
++            {
++                vfull[3 * i + d] = sd * normalAtom(rngAtom);
++            }
++        }
++    }
++    ThreeFry2x64<0>                       rng(p_.seed, RandomDomain::Other);
++    TabulatedNormalDistribution<real, 14> normal;
++
++    // 2. one direction per group, refer-link in group order, transmembrane groups in-plane
++    std::vector<double> dir(3 * ng);
++    for (int g = 0; g < ng; g++)
++    {
++        rng.restart(step, static_cast<uint64_t>(natoms) + g);
++        normal.reset();
++        for (int d = 0; d < 3; d++)
++        {
++            dir[3 * g + d] = normal(rng);
++        }
++    }
++    for (int g = 0; g < ng; g++)
++    {
++        if (p_.link[g] > 0)
++        {
++            for (int d = 0; d < 3; d++)
++            {
++                dir[3 * g + d] = dir[3 * (p_.link[g] - 1) + d];
++            }
++        }
++    }
++    for (int g = 0; g < ng; g++)
++    {
++        double* u = &dir[3 * g];
++        double  n = std::sqrt(dot3(u, u));
++        for (int d = 0; d < 3; d++)
++        {
++            u[d] = n > 0 ? u[d] / n : 0;
++        }
++        if (p_.region[g] == KamdRegion::Transmembrane)
++        {
++            const int ax = p_.membraneAxis;
++            u[ax]        = 0;
++            n            = std::sqrt(dot3(u, u));
++            if (n > 1e-10)
++            {
++                for (int d = 0; d < 3; d++)
++                {
++                    u[d] /= n;
++                }
++            }
++            else
++            {
++                u[0] = u[1] = u[2] = 0;
++                u[ax == 0 ? 1 : 0] = 1;
++            }
++        }
++    }
++
++    const auto t1 = std::chrono::steady_clock::now();
++    // 3. first shell
++    const std::vector<int> record = kamdFindFirstShell(p_, x, box);
++    const auto             t2     = std::chrono::steady_clock::now();
++
++    // 4. speed-preserving redirect of the full-step velocities
++    std::vector<int> nShell(ng, 0), nSurf(ng, 0);
++    for (int i = 0; i < natoms; i++)
++    {
++        if (record[i] == 0 || mass_[i] <= 0)
++        {
++            continue;
++        }
++        const int     g = std::abs(record[i]) - 1;
++        double*       w = &vfull[3 * i];
++        const double* u = &dir[3 * g];
++        (record[i] > 0 ? nShell : nSurf)[g]++;
++        if (p_.region[g] == KamdRegion::Transmembrane)
++        {
++            const int    ax    = p_.membraneAxis;
++            const double vpar  = w[ax];
++            const double vperp = std::sqrt(std::max(dot3(w, w) - vpar * vpar, 0.0));
++            for (int d = 0; d < 3; d++)
++            {
++                w[d] = u[d] * vperp;
++            }
++            w[ax] += vpar;
++        }
++        else
++        {
++            const double speed = std::sqrt(dot3(w, w));
++            for (int d = 0; d < 3; d++)
++            {
++                w[d] = u[d] * speed;
++            }
++        }
++    }
++
++    // 5. leap-frog: store v(t - dt/2) = v(t) - F/m dt/2
++#pragma omp parallel for schedule(static)
++    for (int i = 0; i < natoms; i++)
++    {
++        const int    l = g2l[i];
++        const double c = mass_[i] > 0 ? 0.5 * timeStep_ / mass_[i] : 0.0;
++        for (int d = 0; d < 3; d++)
++        {
++            v[l][d] = static_cast<real>(vfull[3 * i + d] - c * f[l][d]);
++        }
++    }
++
++    const auto t3 = std::chrono::steady_clock::now();
++    auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
++    resetMs_ += ms(t0, t3);
++    // 6. reset the monitor
++    std::fill(last_.begin(), last_.end(), 0.0);
++    std::fill(count_.begin(), count_.end(), 0);
++    numResets_++;
++
++    std::string s1, s2, s3;
++    for (int g = 0; g < ng; g++)
++    {
++        s1 += formatString("%s%d", g ? "," : "", nShell[g]);
++        s2 += formatString("%s%d", g ? "," : "", nSurf[g]);
++        s3 += formatString("%s[%.6f,%.6f,%.6f]", g ? "," : "", dir[3 * g], dir[3 * g + 1], dir[3 * g + 2]);
++    }
++    std::fprintf(log_,
++                 "%lld\treset\t[%s]\t[%s]\t[%s]\tms(mb,shell,redirect)=%.2f,%.2f,%.2f\n",
++                 static_cast<long long>(step),
++                 s1.c_str(),
++                 s2.c_str(),
++                 s3.c_str(),
++                 ms(t0, t1),
++                 ms(t1, t2),
++                 ms(t2, t3));
++    std::fflush(log_);
++
++    if (p_.writeDiag && !diagDone_)
++    {
++        diagDone_ = true;
++        FILE* fp  = std::fopen("kamd_diag.txt", "w");
++        if (!fp)
++        {
++            GMX_THROW(FileIOError("KAMD: cannot write kamd_diag.txt"));
++        }
++        std::fprintf(fp, "# KAMD first-reset diagnostic, step %lld\n", static_cast<long long>(step));
++        std::fprintf(fp,
++                     "box %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g %.9g\n",
++                     box[0][0],
++                     box[0][1],
++                     box[0][2],
++                     box[1][0],
++                     box[1][1],
++                     box[1][2],
++                     box[2][0],
++                     box[2][1],
++                     box[2][2]);
++        std::fprintf(fp,
++                     "# atom(1-based) x y z (nm) record (g>0 shell of group g, -g surface of group "
++                     "g)\n");
++        for (int i = 0; i < natoms; i++)
++        {
++            std::fprintf(fp, "%d %.9g %.9g %.9g %d\n", i + 1, x[i][0], x[i][1], x[i][2], record[i]);
++        }
++        std::fclose(fp);
++    }
++}
++
++} // namespace gmx
+diff --git a/src/gromacs/mdrun/kamd.h b/src/gromacs/mdrun/kamd.h
+new file mode 100644
+index 0000000..ee213de
+--- /dev/null
++++ b/src/gromacs/mdrun/kamd.h
+@@ -0,0 +1,134 @@
++/*
++ * This file is part of the GROMACS molecular simulation package.
++ *
++ * KAMD (Kinetically Accelerated Molecular Dynamics) for GROMACS.
++ * Port of the pmemd.cuda implementation by Zhen Huang, Haixin Wei and Ray Luo (UC Irvine).
++ * Method: H. Wei et al., bioRxiv 2025, doi:10.1101/2025.06.14.659665.
++ *
++ * GROMACS is free software; you can redistribute it and/or modify it under the terms of the
++ * GNU Lesser General Public License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++/*! \internal \file
++ * \brief Declares the KAMD pseudo-Brownian-dynamics velocity reset for the leap-frog integrators.
++ *
++ * Every pseudobd-cycles steps the translational momentum of each reference group is projected on
++ * the velocity of the reference centre of mass; once every group has registered nzero-crossings
++ * sign changes of that projection, all velocities are redrawn from Maxwell-Boltzmann and the
++ * first-shell bath atoms and surface reference atoms of each group are given a common random
++ * direction with their speed preserved.  See doc/kamd in the patch for the full description.
++ */
++#ifndef GMX_MDRUN_KAMD_H
++#define GMX_MDRUN_KAMD_H
++
++#include <cstdint>
++#include <cstdio>
++
++#include <memory>
++#include <string>
++#include <vector>
++
++#include "gromacs/utility/arrayref.h"
++#include "gromacs/utility/real.h"
++#include "gromacs/utility/vectypes.h"
++
++struct t_inputrec;
++
++namespace gmx
++{
++
++//! Region types, same numbering as the Amber &kamd namelist.
++enum class KamdRegion : int
++{
++    Solution      = 1,
++    Transmembrane = 2
++};
++
++//! Parsed and validated KAMD settings (lengths in nm).
++struct KamdParameters
++{
++    int                           pseudobdCycles = 250;
++    int                           nzeroCrossings = 2;
++    double                        shellCut       = 0.5;
++    double                        surfaceCut     = 0.3;
++    double                        membraneCut    = 0.3;
++    int                           membraneAxis   = -1; //!< 0,1,2 or -1 if unset
++    double                        temperature    = -1;
++    int64_t                       seed           = -1;
++    std::vector<std::vector<int>> groups;     //!< 0-based global atom indices per reference group
++    std::vector<std::string>      groupNames; //!< for the log
++    std::vector<int>              link;       //!< 1-based, 0 = own direction
++    std::vector<KamdRegion>       region;
++    std::vector<int>              solvent;
++    std::vector<int>              membrane;
++    std::string                   logFile   = "kamd.log";
++    bool                          writeDiag = false;
++};
++
++/*! \brief Read a KAMD input file (key = value) and the index file it names.
++ *
++ * Throws InvalidInputError with a message mirroring the pmemd &kamd checks.
++ */
++KamdParameters readKamdParameters(const std::string& fileName, const t_inputrec& ir, int numAtoms);
++
++//! Result of a first-shell search: per atom 0 = untouched, g+1 = bath atom of group g, -(g+1) = surface ref atom of group g.
++std::vector<int> kamdFindFirstShell(const KamdParameters& p, ArrayRef<const RVec> x, const matrix box);
++
++/*! \brief KAMD driver used by the md integrator loop.
++ *
++ * All arrays passed in are in local (home-atom) order; \p localToGlobal maps them to global
++ * atom indices (empty = identity).  All home atoms of the system must be on this rank,
++ * i.e. a single PP rank, with or without the DD atom ordering GROMACS uses on one rank.
++ */
++class Kamd
++{
++public:
++    Kamd(KamdParameters parameters, int numAtoms, double timeStep, FILE* fplog);
++    ~Kamd();
++
++    //! Whether the momentum monitor runs at this step (stepRel counted from the start of this run).
++    bool isCheckStep(int64_t stepRel) const;
++
++    //! Register a momentum check with the current (half-step) velocities; returns true if a reset must happen now.
++    bool checkMomenta(int64_t              step,
++                      ArrayRef<const int>  localToGlobal,
++                      ArrayRef<const real> massLocal,
++                      ArrayRef<const RVec> v);
++
++    /*! \brief Pseudo-BD reset: new velocities written to \p v.
++     *
++     * \p x and \p f are the coordinates and forces at this step, \p v holds v(t - dt/2).
++     */
++    void resetVelocities(int64_t              step,
++                         ArrayRef<const int>  localToGlobal,
++                         ArrayRef<const real> massLocal,
++                         ArrayRef<const RVec> x,
++                         ArrayRef<const RVec> f,
++                         const matrix         box,
++                         ArrayRef<RVec>       v);
++
++    int numResets() const { return numResets_; }
++
++private:
++    //! Global masses and group masses from local data (once).
++    void setMasses(ArrayRef<const int> localToGlobal, ArrayRef<const real> massLocal);
++    //! global index -> local index
++    const std::vector<int>& globalToLocal(ArrayRef<const int> localToGlobal);
++
++    KamdParameters      p_;
++    int                 numAtoms_;
++    std::vector<int>    g2l_;
++    std::vector<double> mass_;
++    std::vector<double> groupMass_;
++    std::vector<double> last_;
++    std::vector<int>    count_;
++    double              timeStep_;
++    FILE*               log_       = nullptr;
++    int                 numResets_ = 0;
++    double              resetMs_   = 0;
++    bool                diagDone_  = false;
++};
++
++} // namespace gmx
++
++#endif
+diff --git a/src/gromacs/mdrun/legacymdrunoptions.h b/src/gromacs/mdrun/legacymdrunoptions.h
+index afb44d0..e657a37 100644
+--- a/src/gromacs/mdrun/legacymdrunoptions.h
++++ b/src/gromacs/mdrun/legacymdrunoptions.h
+@@ -131,6 +131,7 @@ public:
+                                           { efRND, "-multidir", nullptr, ffOPTRDMULT },
+                                           { efXVG, "-awh", "awhinit", ffOPTRD },
+                                           { efDAT, "-plumed", "plumed", ffOPTRD },
++                                          { efDAT, "-kamd", "kamd", ffOPTRD },
+                                           { efDAT, "-membed", "membed", ffOPTRD },
+                                           { efTOP, "-mp", "membed", ffOPTRD },
+                                           { efNDX, "-mn", "membed", ffOPTRD },
+diff --git a/src/gromacs/mdrun/legacysimulator.cpp b/src/gromacs/mdrun/legacysimulator.cpp
+index fa597eb..8e58690 100644
+--- a/src/gromacs/mdrun/legacysimulator.cpp
++++ b/src/gromacs/mdrun/legacysimulator.cpp
+@@ -42,6 +42,7 @@
+ 
+ #include "legacysimulator.h"
+ 
++#include "gromacs/commandline/filenm.h"
+ #include "gromacs/mdtypes/inputrec.h"
+ #include "gromacs/mdtypes/md_enums.h"
+ #include "gromacs/utility/exceptions.h"
+@@ -51,6 +52,15 @@ namespace gmx
+ //! \brief Run the correct integrator function.
+ void LegacySimulator::run()
+ {
++    // KAMD is implemented in do_md() for the leap-frog integrators only; never ignore -kamd silently.
++    if (opt2bSet("-kamd", nFile_, fnm_)
++        && (doRerun_
++            || (inputRec_->eI != IntegrationAlgorithm::MD && inputRec_->eI != IntegrationAlgorithm::SD1)))
++    {
++        GMX_THROW(InvalidInputError(
++                "-kamd is supported only for dynamics with integrator = md or sd "
++                "(not for rerun, minimization, normal modes, TPI, bd or velocity Verlet)."));
++    }
+     switch (inputRec_->eI)
+     {
+         case IntegrationAlgorithm::MD:
+diff --git a/src/gromacs/mdrun/md.cpp b/src/gromacs/mdrun/md.cpp
+index c823942..17aa5d1 100644
+--- a/src/gromacs/mdrun/md.cpp
++++ b/src/gromacs/mdrun/md.cpp
+@@ -115,6 +115,7 @@
+ #include "gromacs/mdlib/update_vv.h"
+ #include "gromacs/mdlib/vcm.h"
+ #include "gromacs/mdlib/vsite.h"
++#include "gromacs/mdrun/kamd.h"
+ #include "gromacs/mdrunutility/freeenergy.h"
+ #include "gromacs/mdrunutility/handlerestart.h"
+ #include "gromacs/mdrunutility/mdmodulesnotifiers.h"
+@@ -423,6 +424,26 @@ void gmx::LegacySimulator::do_md()
+ 
+     std::unique_ptr<UpdateConstrainGpu> integrator;
+ 
++    // KAMD (Kinetically Accelerated MD): velocity resets of first-shell solvent, see kamd.h
++    std::unique_ptr<gmx::Kamd> kamd;
++    if (opt2bSet("-kamd", nFile_, fnm_))
++    {
++        if (simulationWork.havePpDomainDecomposition)
++        {
++            GMX_THROW(gmx::InvalidInputError(
++                    "KAMD currently supports a single PP rank only (no multi-rank domain "
++                    "decomposition). Run with -ntmpi 1, or -ntmpi 2 -npme 1."));
++        }
++        if (simulationWork.useMdGpuGraph)
++        {
++            GMX_THROW(gmx::InvalidInputError(
++                    "KAMD cannot be combined with CUDA graphs (unset GMX_CUDA_GRAPH)."));
++        }
++        gmx::KamdParameters kamdParameters =
++                gmx::readKamdParameters(opt2fn("-kamd", nFile_, fnm_), *ir, topGlobal_.natoms);
++        kamd = std::make_unique<gmx::Kamd>(std::move(kamdParameters), topGlobal_.natoms, ir->delta_t, fpLog_);
++    }
++
+     StatePropagatorDataGpu* stateGpu = fr_->stateGpu;
+ 
+     // TODO: the assertions below should be handled by UpdateConstraintsBuilder.
+@@ -1449,6 +1470,48 @@ void gmx::LegacySimulator::do_md()
+                 checkpointHandler->setSignal(wallTimeAccounting_);
+             }
+ 
++            // KAMD: momentum monitor and pseudo-BD velocity reset. Velocities are v(t - dt/2) and
++            // f holds the forces at t, the same point in the step as in pmemd's runmd.
++            if (kamd && kamd->isCheckStep(step_rel))
++            {
++                // One PP rank holds all atoms; with the single-rank DD atom ordering the local
++                // order differs from the global one, so pass the local->global map.
++                GMX_RELEASE_ASSERT(md->homenr == topGlobal_.natoms,
++                                   "KAMD needs all atoms on this rank");
++                const gmx::ArrayRef<const int> kamdLocalToGlobal =
++                        haveDDAtomOrdering(*cr_)
++                                ? gmx::constArrayRefFromArray(cr_->dd->globalAtomIndices.data(), md->homenr)
++                                : gmx::ArrayRef<const int>();
++                const gmx::ArrayRef<const real> kamdMass =
++                        gmx::constArrayRefFromArray(md->massT.data(), md->homenr);
++                if (useGpuForUpdate)
++                {
++                    stateGpu->copyVelocitiesFromGpu(state_->v, AtomLocality::Local);
++                    stateGpu->waitVelocitiesReadyOnHost(AtomLocality::Local);
++                }
++                if (kamd->checkMomenta(step, kamdLocalToGlobal, kamdMass, state_->v))
++                {
++                    if (useGpuForUpdate)
++                    {
++                        stateGpu->copyCoordinatesFromGpu(state_->x, AtomLocality::Local);
++                        stateGpu->waitCoordinatesReadyOnHost(AtomLocality::Local);
++                        // Same condition as the force output copy above: otherwise the host forces are current.
++                        if (runScheduleWork_->stepWork.useGpuFBufferOps && !virtualSites_
++                            && !simulationWork.useCpuPmePpCommunication)
++                        {
++                            stateGpu->copyForcesFromGpu(f.view().force(), AtomLocality::Local);
++                            stateGpu->waitForcesReadyOnHost(AtomLocality::Local);
++                        }
++                    }
++                    kamd->resetVelocities(
++                            step, kamdLocalToGlobal, kamdMass, state_->x, f.view().force(), state_->box, state_->v);
++                    if (useGpuForUpdate)
++                    {
++                        stateGpu->copyVelocitiesToGpu(state_->v, AtomLocality::Local);
++                    }
++                }
++            }
++
+             /* #########   START SECOND UPDATE STEP ################# */
+ 
+             /* at the start of step, randomize or scale the velocities ((if vv. Restriction of
+diff --git a/src/gromacs/mdrun/runner.cpp b/src/gromacs/mdrun/runner.cpp
+index f6d5491..6ebb708 100644
+--- a/src/gromacs/mdrun/runner.cpp
++++ b/src/gromacs/mdrun/runner.cpp
+@@ -1067,6 +1067,13 @@ int Mdrunner::mdrunner()
+                                                                          membedHolder.doMembed(),
+                                                                          updateTarget == TaskTarget::Gpu);
+ 
++    if (useModularSimulator && opt2bSet("-kamd", filenames.size(), filenames.data()))
++    {
++        GMX_THROW(
++                InconsistentInputError("-kamd is implemented in the legacy md integrator only; "
++                                       "unset GMX_USE_MODULAR_SIMULATOR."));
++    }
++
+     // Now the number of ranks is known to all ranks, and each knows
+     // the inputrec read by the main rank. The ranks can now all run
+     // the task-deciding functions and will agree on the result
+diff --git a/src/gromacs/mdrun/tests/CMakeLists.txt b/src/gromacs/mdrun/tests/CMakeLists.txt
+new file mode 100644
+index 0000000..dd51f4e
+--- /dev/null
++++ b/src/gromacs/mdrun/tests/CMakeLists.txt
+@@ -0,0 +1,12 @@
++#
++# This file is part of the GROMACS molecular simulation package.
++#
++# GROMACS is free software; you can redistribute it and/or modify it under the terms of the
++# GNU Lesser General Public License as published by the Free Software Foundation; either
++# version 2.1 of the License, or (at your option) any later version.
++
++gmx_add_unit_test(MdrunKamdUnitTests mdrun-kamd-test
++    CPP_SOURCE_FILES
++        kamd.cpp
++        )
++target_link_libraries(mdrun-kamd-test PRIVATE legacy_api)
+diff --git a/src/gromacs/mdrun/tests/kamd.cpp b/src/gromacs/mdrun/tests/kamd.cpp
+new file mode 100644
+index 0000000..f029117
+--- /dev/null
++++ b/src/gromacs/mdrun/tests/kamd.cpp
+@@ -0,0 +1,570 @@
++/*
++ * This file is part of the GROMACS molecular simulation package.
++ *
++ * Tests for KAMD (Kinetically Accelerated Molecular Dynamics), see src/gromacs/mdrun/kamd.h.
++ *
++ * GROMACS is free software; you can redistribute it and/or modify it under the terms of the
++ * GNU Lesser General Public License as published by the Free Software Foundation; either
++ * version 2.1 of the License, or (at your option) any later version.
++ */
++#include "gmxpre.h"
++
++#include "gromacs/mdrun/kamd.h"
++
++#include <cmath>
++
++#include <fstream>
++#include <random>
++#include <string>
++#include <vector>
++
++#include <gtest/gtest.h>
++
++#include "gromacs/mdtypes/inputrec.h"
++#include "gromacs/utility/exceptions.h"
++#include "gromacs/utility/smalloc.h"
++#include "gromacs/utility/vec.h"
++
++#include "testutils/testasserts.h"
++#include "testutils/testfilemanager.h"
++
++namespace gmx
++{
++namespace test
++{
++namespace
++{
++
++//! 1-based index groups used by the input tests (24 atoms).
++const char* c_indexFile =
++        "[ g1 ]\n1 2 3\n"
++        "[ g2 ]\n4 5 6\n"
++        "[ sol ]\n7 8 9 10 11 12 13 14 15 16\n17 18 19 20\n"
++        "[ mem ]\n21 22 23 24\n"
++        "[ ovl ]\n3 4\n";
++
++class KamdInputTest : public ::testing::Test
++{
++protected:
++    KamdInputTest()
++    {
++        ir_.opts.ngtc = 1;
++        snew(ir_.opts.ref_t, 1);
++        ir_.opts.ref_t[0] = 300;
++        ir_.ld_seed       = 1234;
++    }
++
++    // done_inputrec() frees per-tc-group annealing arrays for ngtc groups, which this test does
++    // not allocate; only ref_t is ours, and it is freed regardless of ngtc.
++    ~KamdInputTest() override { ir_.opts.ngtc = 0; }
++
++    //! Write the index file and a kamd input with \p body; returns the kamd input path.
++    std::string write(const std::string& body, const std::string& index = c_indexFile)
++    {
++        const std::string ndx = fileManager_.getTemporaryFilePath("index.ndx").string();
++        std::ofstream(ndx) << index;
++        const std::string in = fileManager_.getTemporaryFilePath("kamd.dat").string();
++        std::ofstream(in) << "index = " << ndx << "\n" << body;
++        return in;
++    }
++
++    TestFileManager fileManager_;
++    t_inputrec      ir_;
++};
++
++TEST_F(KamdInputTest, ReadsMinimalInputWithDefaults)
++{
++    const auto p = readKamdParameters(write("refer-groups = g1 g2\nsolvent-group = sol\n"), ir_, 24);
++    ASSERT_EQ(p.groups.size(), 2U);
++    EXPECT_EQ(p.groups[0], (std::vector<int>{ 0, 1, 2 }));
++    EXPECT_EQ(p.groups[1], (std::vector<int>{ 3, 4, 5 }));
++    EXPECT_EQ(p.solvent.size(), 14U);
++    EXPECT_EQ(p.pseudobdCycles, 250);
++    EXPECT_EQ(p.nzeroCrossings, 2);
++    EXPECT_DOUBLE_EQ(p.shellCut, 0.5);
++    EXPECT_DOUBLE_EQ(p.surfaceCut, 0.3);
++    EXPECT_DOUBLE_EQ(p.temperature, 300);
++    EXPECT_EQ(p.seed, 1234);
++    EXPECT_EQ(p.link, (std::vector<int>{ 0, 0 }));
++    EXPECT_EQ(p.region[0], KamdRegion::Solution);
++}
++
++TEST_F(KamdInputTest, ReadsAllOptions)
++{
++    const auto p = readKamdParameters(write("; comment\n"
++                                            "refer_groups = g1 g2   # trailing comment\n"
++                                            "solvent-group = sol\n"
++                                            "membrane-group = mem\n"
++                                            "region-type = 1 2\n"
++                                            "membrane-axis = z\n"
++                                            "membrane-cut = 0.4\n"
++                                            "refer-link = 0 1\n"
++                                            "pseudobd-cycles = 100\n"
++                                            "nzero-crossings = 3\n"
++                                            "shell-cut = 0.6\n"
++                                            "surface-cut = 0.2\n"
++                                            "temperature = 310\n"
++                                            "seed = 7\n"),
++                                      ir_,
++                                      24);
++    EXPECT_EQ(p.region[1], KamdRegion::Transmembrane);
++    EXPECT_EQ(p.membraneAxis, 2);
++    EXPECT_DOUBLE_EQ(p.membraneCut, 0.4);
++    EXPECT_EQ(p.link, (std::vector<int>{ 0, 1 }));
++    EXPECT_EQ(p.pseudobdCycles, 100);
++    EXPECT_EQ(p.nzeroCrossings, 3);
++    EXPECT_DOUBLE_EQ(p.temperature, 310);
++    EXPECT_EQ(p.seed, 7);
++    EXPECT_EQ(p.membrane.size(), 4U);
++}
++
++TEST_F(KamdInputTest, RejectsInvalidInput)
++{
++    const std::string              base = "solvent-group = sol\n";
++    const std::vector<std::string> bad  = {
++        "refer-groups = g1 ovl\n" + base,                        // overlapping groups
++        "refer-groups = g1 g2\nsolvent-group = g2\n",            // bath overlaps a group
++        "refer-groups = g1 g2\n" + base + "surface-cut = 0.6\n", // surface > shell
++        "refer-groups = g1 g2\n" + base + "refer-link = 0 2\n",  // links to itself
++        "refer-groups = g1 g2\n" + base + "refer-link = 0 3\n",  // out of range
++        "refer-groups = g1 g2\n" + base + "refer-link = 0\n",    // wrong count
++        "refer-groups = g1 g2\n" + base + "region-type = 1 2\n", // TM without membrane
++        "refer-groups = g1 g2\n" + base + "region-type = 1 2\nmembrane-group = mem\n", // no axis
++        "refer-groups = g1 g2\n" + base + "region-type = 1 3\n",   // bad region type
++        "refer-groups = g1 g2\n" + base + "membrane-axis = w\n",   // bad axis
++        "refer-groups = g1 g2\n" + base + "seed = 12abc\n",        // bad seed
++        "refer-groups = g1 g2\n" + base + "pseudobd-cycles = 0\n", // bad cycles
++        "refer-groups = g1 g2\n" + base + "no-such-key = 1\n",     // unknown key
++        "refer-groups = g1 nosuch\n" + base,                       // unknown group
++        "refer-groups = g1 g2\n",                                  // no solvent
++        base,                                                      // no reference group
++        "refer-groups = g1 g2\n" + base + "shell-cut = 0.5\nshell-cut = 0.6\n", // duplicate key
++    };
++    for (const auto& body : bad)
++    {
++        SCOPED_TRACE(body);
++        EXPECT_THROW_GMX(readKamdParameters(write(body), ir_, 24), InvalidInputError);
++    }
++}
++
++TEST_F(KamdInputTest, RejectsBadIndexFiles)
++{
++    const std::string body = "refer-groups = g1 g2\nsolvent-group = sol\n";
++    EXPECT_THROW_GMX(readKamdParameters(write(body, "[ g1 ]\n1 2 x\n[ g2 ]\n4\n[ sol ]\n7\n"), ir_, 24),
++                     InvalidInputError);
++    EXPECT_THROW_GMX(readKamdParameters(write(body, "[ g1 ]\n1 0\n[ g2 ]\n4\n[ sol ]\n7\n"), ir_, 24),
++                     InvalidInputError);
++    // solvent atom 20 does not exist in a 19-atom system
++    EXPECT_THROW_GMX(readKamdParameters(write(body), ir_, 19), InvalidInputError);
++}
++
++TEST_F(KamdInputTest, NeedsExplicitTemperatureForDifferentRefT)
++{
++    srenew(ir_.opts.ref_t, 2);
++    ir_.opts.ngtc          = 2;
++    ir_.opts.ref_t[1]      = 310;
++    const std::string body = "refer-groups = g1 g2\nsolvent-group = sol\n";
++    EXPECT_THROW_GMX(readKamdParameters(write(body), ir_, 24), InvalidInputError);
++    EXPECT_DOUBLE_EQ(readKamdParameters(write(body + "temperature = 305\n"), ir_, 24).temperature, 305);
++}
++
++// ------------------------------------------------------------------ first-shell search
++
++/*! \brief Straightforward O(N_ref x N_bath) reference with the same conventions as pmemd:
++ * strict < cutoffs, nearest reference atom wins, ties to the lower group, fractional
++ * minimum image.  Returns the per-atom record (g+1 bath, -(g+1) surface, 0 untouched).
++ */
++std::vector<int> referenceFirstShell(const KamdParameters& p, const std::vector<RVec>& x, const matrix box)
++{
++    double inv[3][3];
++    {
++        const double a = box[0][0], b = box[1][1], c = box[2][2];
++        inv[0][0] = 1 / a;
++        inv[1][1] = 1 / b;
++        inv[2][2] = 1 / c;
++        inv[0][1] = inv[0][2] = inv[1][2] = 0;
++        inv[1][0]                         = -box[1][0] / (a * b);
++        inv[2][1]                         = -box[2][1] / (b * c);
++        inv[2][0] = (box[1][0] * box[2][1] - box[1][1] * box[2][0]) / (a * b * c);
++    }
++    auto dist2 = [&](int i, int j)
++    {
++        double d[3], f[3], r2 = 0;
++        for (int k = 0; k < 3; k++)
++        {
++            d[k] = static_cast<double>(x[i][k]) - x[j][k];
++        }
++        for (int k = 0; k < 3; k++)
++        {
++            f[k] = d[0] * inv[0][k] + d[1] * inv[1][k] + d[2] * inv[2][k];
++            f[k] -= std::round(f[k]);
++        }
++        for (int k = 0; k < 3; k++)
++        {
++            const double dk = f[0] * box[0][k] + f[1] * box[1][k] + f[2] * box[2][k];
++            r2 += dk * dk;
++        }
++        return r2;
++    };
++    std::vector<int> record(x.size(), 0);
++    for (KamdRegion region : { KamdRegion::Solution, KamdRegion::Transmembrane })
++    {
++        const auto& bath = region == KamdRegion::Solution ? p.solvent : p.membrane;
++        const double acut2 = std::pow(region == KamdRegion::Solution ? p.shellCut : p.membraneCut, 2);
++        const double scut2 = std::pow(region == KamdRegion::Solution ? p.surfaceCut : p.membraneCut, 2);
++        for (int b : bath)
++        {
++            double best  = acut2;
++            int    bestG = -1;
++            for (size_t g = 0; g < p.groups.size(); g++)
++            {
++                if (p.region[g] != region)
++                {
++                    continue;
++                }
++                for (int r : p.groups[g])
++                {
++                    const double r2 = dist2(b, r);
++                    if (r2 < best)
++                    {
++                        best  = r2;
++                        bestG = static_cast<int>(g);
++                    }
++                }
++            }
++            if (bestG >= 0)
++            {
++                record[b] = bestG + 1;
++            }
++        }
++        for (size_t g = 0; g < p.groups.size(); g++)
++        {
++            if (p.region[g] != region)
++            {
++                continue;
++            }
++            for (int r : p.groups[g])
++            {
++                for (int b : bath)
++                {
++                    if (dist2(r, b) < scut2)
++                    {
++                        record[r] = -static_cast<int>(g + 1);
++                        break;
++                    }
++                }
++            }
++        }
++    }
++    return record;
++}
++
++//! Random system: two compact groups straddling periodic boundaries, a solvent and a membrane bath.
++struct RandomSystem
++{
++    KamdParameters    p;
++    std::vector<RVec> x;
++};
++
++RandomSystem makeRandomSystem(const matrix box, int seed, bool withMembrane)
++{
++    RandomSystem                     s;
++    std::mt19937                     gen(seed);
++    std::uniform_real_distribution<> u(0, 1);
++    std::normal_distribution<>       n(0, 0.15);
++    const int                        nRef = 40, nBath = 1500, nMem = withMembrane ? 400 : 0;
++    auto                             frac = [&](double fx, double fy, double fz)
++    {
++        RVec r;
++        for (int k = 0; k < 3; k++)
++        {
++            r[k] = fx * box[0][k] + fy * box[1][k] + fz * box[2][k];
++        }
++        return r;
++    };
++    for (int i = 0; i < nRef; i++) // group 1 near x = 0, group 2 near z = L
++    {
++        RVec c = frac(0.02, 0.5, 0.5);
++        s.x.push_back({ c[0] + real(n(gen)), c[1] + real(n(gen)), c[2] + real(n(gen)) });
++    }
++    for (int i = 0; i < nRef; i++)
++    {
++        RVec c = frac(0.5, 0.5, 0.97);
++        s.x.push_back({ c[0] + real(n(gen)), c[1] + real(n(gen)), c[2] + real(n(gen)) });
++    }
++    for (int i = 0; i < nBath + nMem; i++)
++    {
++        s.x.push_back(frac(u(gen), u(gen), u(gen)));
++    }
++    s.p.groups = { {}, {} };
++    for (int i = 0; i < nRef; i++)
++    {
++        s.p.groups[0].push_back(i);
++        s.p.groups[1].push_back(nRef + i);
++    }
++    for (int i = 0; i < nBath; i++)
++    {
++        s.p.solvent.push_back(2 * nRef + i);
++    }
++    for (int i = 0; i < nMem; i++)
++    {
++        s.p.membrane.push_back(2 * nRef + nBath + i);
++    }
++    s.p.link = { 0, 0 };
++    s.p.region = { KamdRegion::Solution, withMembrane ? KamdRegion::Transmembrane : KamdRegion::Solution };
++    s.p.membraneAxis = 2;
++    s.p.membraneCut  = 0.4;
++    s.p.temperature  = 300;
++    s.p.seed         = 11;
++    return s;
++}
++
++void expectSameRecord(const std::vector<int>& expected, const std::vector<int>& actual)
++{
++    ASSERT_EQ(expected.size(), actual.size());
++    int nShell = 0, nSurf = 0;
++    for (size_t i = 0; i < expected.size(); i++)
++    {
++        EXPECT_EQ(expected[i], actual[i]) << "atom " << i;
++        nShell += expected[i] > 0;
++        nSurf += expected[i] < 0;
++    }
++    // the test is only meaningful if both kinds of atoms occur
++    EXPECT_GT(nShell, 0);
++    EXPECT_GT(nSurf, 0);
++}
++
++TEST(KamdFirstShellTest, CellSearchMatchesReferenceInRectangularBox)
++{
++    const matrix box = { { 3.1, 0, 0 }, { 0, 2.9, 0 }, { 0, 0, 3.3 } }; // >= 3 cells of 0.5 nm
++    for (int seed : { 1, 2, 3 })
++    {
++        auto s = makeRandomSystem(box, seed, false);
++        expectSameRecord(referenceFirstShell(s.p, s.x, box), kamdFindFirstShell(s.p, s.x, box));
++    }
++}
++
++TEST(KamdFirstShellTest, BruteForceMatchesReferenceInSmallBox)
++{
++    const matrix box = { { 1.2, 0, 0 }, { 0, 1.3, 0 }, { 0, 0, 1.4 } }; // < 3 cells: brute force
++    auto         s   = makeRandomSystem(box, 4, false);
++    expectSameRecord(referenceFirstShell(s.p, s.x, box), kamdFindFirstShell(s.p, s.x, box));
++}
++
++TEST(KamdFirstShellTest, MatchesReferenceInTriclinicBox)
++{
++    const matrix box = { { 3.0, 0, 0 }, { 0.6, 2.8, 0 }, { -0.4, 0.5, 3.1 } };
++    auto         s   = makeRandomSystem(box, 5, false);
++    expectSameRecord(referenceFirstShell(s.p, s.x, box), kamdFindFirstShell(s.p, s.x, box));
++}
++
++TEST(KamdFirstShellTest, TransmembraneGroupUsesMembraneBathOnly)
++{
++    const matrix box = { { 3.1, 0, 0 }, { 0, 2.9, 0 }, { 0, 0, 3.3 } };
++    auto         s   = makeRandomSystem(box, 6, true);
++    const auto   rec = kamdFindFirstShell(s.p, s.x, box);
++    expectSameRecord(referenceFirstShell(s.p, s.x, box), rec);
++    for (int b : s.p.solvent)
++    {
++        EXPECT_TRUE(rec[b] == 0 || rec[b] == 1) << "solvent atom assigned to the TM group";
++    }
++    for (int m : s.p.membrane)
++    {
++        EXPECT_TRUE(rec[m] == 0 || rec[m] == 2) << "membrane atom assigned to the solution group";
++    }
++}
++
++// ------------------------------------------------------------------ monitor and reset
++
++class KamdDriverTest : public ::testing::Test
++{
++protected:
++    KamdParameters twoGroups(int nAtoms)
++    {
++        KamdParameters p;
++        p.groups         = { { 0 }, { 1 } };
++        p.groupNames     = { "a", "b" };
++        p.link           = { 0, 0 };
++        p.region         = { KamdRegion::Solution, KamdRegion::Solution };
++        p.temperature    = 300;
++        p.seed           = 42;
++        p.nzeroCrossings = 2;
++        p.pseudobdCycles = 10;
++        for (int i = 2; i < nAtoms; i++)
++        {
++            p.solvent.push_back(i);
++        }
++        p.logFile = fileManager_.getTemporaryFilePath("kamd.log").string();
++        return p;
++    }
++    TestFileManager fileManager_;
++};
++
++TEST_F(KamdDriverTest, CheckStepsFollowPmemd)
++{
++    Kamd kamd(twoGroups(3), 3, 0.002, nullptr);
++    EXPECT_FALSE(kamd.isCheckStep(0));
++    EXPECT_TRUE(kamd.isCheckStep(9)); // (stepRel + 1) % pseudobd-cycles == 0
++    EXPECT_FALSE(kamd.isCheckStep(10));
++    EXPECT_TRUE(kamd.isCheckStep(19));
++}
++
++TEST_F(KamdDriverTest, FiresAfterTheZeroCrossingBudget)
++{
++    Kamd                    kamd(twoGroups(3), 3, 0.002, nullptr);
++    const std::vector<real> mass = { 1, 1, 1 };
++    // group a ahead of / behind the common COM motion along x, alternately
++    const std::vector<RVec> ahead  = { { 2, 0, 0 }, { 0, 0, 0 }, { 0, 0, 0 } };
++    const std::vector<RVec> behind = { { 0, 0, 0 }, { 2, 0, 0 }, { 0, 0, 0 } };
++    EXPECT_FALSE(kamd.checkMomenta(0, {}, mass, ahead));  // first check: no previous sign
++    EXPECT_FALSE(kamd.checkMomenta(1, {}, mass, behind)); // crossing 1
++    EXPECT_FALSE(kamd.checkMomenta(2, {}, mass, behind)); // same sign
++    EXPECT_TRUE(kamd.checkMomenta(3, {}, mass, ahead));   // crossing 2 for both groups
++}
++
++//! Run one reset on a random system and return v(t) = v(t-dt/2) + F dt / 2m.
++std::vector<RVec> resetAndGetFullStepVelocities(Kamd&                    kamd,
++                                                const std::vector<RVec>& x,
++                                                const std::vector<RVec>& f,
++                                                const std::vector<real>& m,
++                                                const matrix             box,
++                                                int64_t                  step,
++                                                const std::vector<int>&  localToGlobal = {})
++{
++    std::vector<RVec> v(x.size(), RVec{ 0, 0, 0 });
++    kamd.resetVelocities(step, localToGlobal, m, x, f, box, v);
++    for (size_t i = 0; i < v.size(); i++)
++    {
++        for (int d = 0; d < 3; d++)
++        {
++            v[i][d] += f[i][d] * 0.001 / m[i];
++        }
++    }
++    return v;
++}
++
++TEST_F(KamdDriverTest, ResetRedirectsShellAndSurfaceAtomsAlongOneDirectionPerGroup)
++{
++    const matrix box             = { { 3.1, 0, 0 }, { 0, 2.9, 0 }, { 0, 0, 3.3 } };
++    auto         s               = makeRandomSystem(box, 7, false);
++    s.p.logFile                  = fileManager_.getTemporaryFilePath("kamd.log").string();
++    s.p.groupNames               = { "a", "b" };
++    const int                  n = static_cast<int>(s.x.size());
++    std::mt19937               gen(3);
++    std::normal_distribution<> nd(0, 300);
++    std::vector<RVec>          f(n);
++    std::vector<real>          m(n);
++    for (int i = 0; i < n; i++)
++    {
++        f[i] = { real(nd(gen)), real(nd(gen)), real(nd(gen)) };
++        m[i] = (i % 3 == 0) ? 16.0 : 1.008;
++    }
++    const auto record = kamdFindFirstShell(s.p, s.x, box);
++    Kamd       kamd(s.p, n, 0.002, nullptr);
++    const auto vfull = resetAndGetFullStepVelocities(kamd, s.x, f, m, box, 100);
++
++    for (int g = 0; g < 2; g++)
++    {
++        RVec dir{ 0, 0, 0 };
++        int  count = 0;
++        for (int i = 0; i < n; i++)
++        {
++            if (std::abs(record[i]) != g + 1)
++            {
++                continue;
++            }
++            RVec u = vfull[i];
++            u /= norm(u);
++            if (count == 0)
++            {
++                dir = u;
++            }
++            EXPECT_NEAR(iprod(u, dir), 1.0, 1e-4) << "atom " << i << " group " << g;
++            count++;
++        }
++        EXPECT_GT(count, 1);
++    }
++    EXPECT_EQ(kamd.numResets(), 1);
++}
++
++TEST_F(KamdDriverTest, ResetIsReproducibleAndIndependentOfAtomOrder)
++{
++    const matrix box    = { { 3.1, 0, 0 }, { 0, 2.9, 0 }, { 0, 0, 3.3 } };
++    auto         s      = makeRandomSystem(box, 8, false);
++    s.p.logFile         = fileManager_.getTemporaryFilePath("kamd.log").string();
++    s.p.groupNames      = { "a", "b" };
++    const int         n = static_cast<int>(s.x.size());
++    std::vector<RVec> f(n, RVec{ 10, -20, 5 });
++    std::vector<real> m(n, 12.0);
++
++    Kamd       k1(s.p, n, 0.002, nullptr);
++    Kamd       k2(s.p, n, 0.002, nullptr);
++    const auto a            = resetAndGetFullStepVelocities(k1, s.x, f, m, box, 500);
++    const auto b            = resetAndGetFullStepVelocities(k2, s.x, f, m, box, 500);
++    const auto c            = resetAndGetFullStepVelocities(k2, s.x, f, m, box, 501);
++    double     diffSameStep = 0, diffOtherStep = 0;
++    for (int i = 0; i < n; i++)
++    {
++        diffSameStep += norm2(RVec(a[i] - b[i]));
++        diffOtherStep += norm2(RVec(a[i] - c[i]));
++    }
++    EXPECT_EQ(diffSameStep, 0);
++    EXPECT_GT(diffOtherStep, 0);
++
++    // the same atoms stored in reversed local order (as with DD atom sorting) give the same result
++    std::vector<int>  l2g(n);
++    std::vector<RVec> xr(n), fr(n);
++    std::vector<real> mr(n);
++    for (int l = 0; l < n; l++)
++    {
++        l2g[l] = n - 1 - l;
++        xr[l]  = s.x[l2g[l]];
++        fr[l]  = f[l2g[l]];
++        mr[l]  = m[l2g[l]];
++    }
++    Kamd       k3(s.p, n, 0.002, nullptr);
++    const auto r = resetAndGetFullStepVelocities(k3, xr, fr, mr, box, 500, l2g);
++    for (int l = 0; l < n; l++)
++    {
++        for (int d = 0; d < 3; d++)
++        {
++            EXPECT_NEAR(r[l][d], a[l2g[l]][d], 1e-4);
++        }
++    }
++}
++
++TEST_F(KamdDriverTest, TransmembraneRedirectKeepsTheNormalComponent)
++{
++    const matrix box    = { { 3.1, 0, 0 }, { 0, 2.9, 0 }, { 0, 0, 3.3 } };
++    auto         s      = makeRandomSystem(box, 9, true);
++    s.p.logFile         = fileManager_.getTemporaryFilePath("kamd.log").string();
++    s.p.groupNames      = { "a", "b" };
++    const int         n = static_cast<int>(s.x.size());
++    std::vector<RVec> f(n, RVec{ 0, 0, 0 });
++    std::vector<real> m(n, 12.0);
++    const auto        record = kamdFindFirstShell(s.p, s.x, box);
++    Kamd              kamd(s.p, n, 0.002, nullptr);
++    const auto        v = resetAndGetFullStepVelocities(kamd, s.x, f, m, box, 3);
++    // all TM-flagged atoms share one in-plane direction; their z components are not redirected
++    RVec dir{ 0, 0, 0 };
++    int  count = 0;
++    for (int i = 0; i < n; i++)
++    {
++        if (std::abs(record[i]) != 2)
++        {
++            continue;
++        }
++        RVec inPlane{ v[i][0], v[i][1], 0 };
++        inPlane /= norm(inPlane);
++        if (count++ == 0)
++        {
++            dir = inPlane;
++        }
++        EXPECT_NEAR(iprod(inPlane, dir), 1.0, 1e-4);
++    }
++    EXPECT_GT(count, 1);
++}
++
++} // namespace
++} // namespace test
++} // namespace gmx

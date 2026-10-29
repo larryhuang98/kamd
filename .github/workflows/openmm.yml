@@ -1,0 +1,25 @@
+name: openmm
+on:
+  push:
+    paths: ["openmm/**", ".github/workflows/openmm.yml"]
+  pull_request:
+    paths: ["openmm/**", ".github/workflows/openmm.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install
+        run: pip install openmm ./openmm[amber,test] ruff
+      - name: lint
+        working-directory: openmm
+        run: ruff check . && ruff format --check .
+      - name: tests
+        run: pytest -q openmm/tests
