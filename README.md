@@ -123,8 +123,8 @@ How to set them:
 
 * **Amber:** `mdout` lists the atoms matched by each mask at startup, then one line per group at each reset:
   `KAMD: velocity reset, group 1, step 12500`.
-* **GROMACS:** `kamd.log` (the `log` key) has one line per reset, and the `md.log` summary gives the number of
-  resets and the time spent.
+* **GROMACS:** `md.log` records the KAMD setup (groups, bath, cutoffs). `kamd.log` (the `log` key) has one
+  line per reset and ends with the total number of resets and the time spent in them.
 * **OpenMM:** the `log` file has one line per reset; `reporter.n_resets` counts them.
 * Inputs are checked before the run starts. Overlapping groups, an empty mask, a missing bath, or an unsupported
   setup stop the run with an error that names the problem.
