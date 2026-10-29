@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use KAMD, please cite the method paper and this software."
+message: "If you use KAMD, please cite the method paper (preferred-citation) and this software."
 title: "KAMD: Kinetic Accelerated Molecular Dynamics for Amber, GROMACS and OpenMM"
 type: software
 version: 0.1.0

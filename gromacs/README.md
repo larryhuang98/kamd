@@ -118,3 +118,8 @@ diag            = no                     ; yes: dump coordinates + first shell a
   |---|---|
   | GPU | 1389 → 1386 ns/day (0.2 %) |
   | CPU | 1050 → 1047 ns/day (0.2 %) |
+
+## How to cite
+
+Please cite the KAMD method paper and the KAMD software; see
+[How to cite](../README.md#how-to-cite) in the top-level README.

@@ -131,3 +131,8 @@ pip install "./openmm[amber,test]"
 pytest openmm/tests     # algorithm unit tests + small OpenMM water-box tests (CPU, ~5 s)
 sbatch validation/run_validation.sbatch   # parity with pmemd.cuda on the 29,467-atom KAMD test system
 ```
+
+## How to cite
+
+Please cite the KAMD method paper and the KAMD software; see
+[How to cite](../README.md#how-to-cite) in the top-level README.

@@ -94,3 +94,8 @@ reset and exits. The OpenMM and GROMACS ports were validated against that dump.
 * **Multi-GPU and CPU builds.** KAMD has not been validated in `pmemd.cuda.MPI` (multi-GPU). It is rejected there,
   and in CPU `pmemd`.
 * **Membrane shell mode.** The membrane shell mode (`kamd_shell_mode = 1`) is experimental; see the tutorial.
+
+## How to cite
+
+Please cite the KAMD method paper and the KAMD software; see
+[How to cite](../README.md#how-to-cite) in the top-level README.

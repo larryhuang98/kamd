@@ -14,6 +14,7 @@ times, KAMD performs a pseudo-Brownian reset:
   are turned onto one random direction per group, each atom keeping its speed.
 
 Method: H. Wei, *J. Chem. Inf. Model.* **66**, 4116–4129 (2026), [doi:10.1021/acs.jcim.5c03093](https://doi.org/10.1021/acs.jcim.5c03093).
+See [How to cite](#how-to-cite).
 
 This repository contains three implementations that share the same algorithm,
 input names and defaults:
@@ -59,10 +60,28 @@ Details and scripts are in `openmm/validation/` and `gromacs/validation/`.
 | CUDA | required for KAMD (tested 12.8) | optional (≥ 12.1; tested 12.8) | optional |
 | tested on | RHEL 8, GCC 11.3, CUDA 12.8, RTX 4090/5090 | RHEL 8, GCC 11.3, CUDA 12.8, RTX 4090/5090 | Linux x86-64 |
 
-## Citing
+## How to cite
 
-If you use KAMD, please cite the method paper and this software (see [`CITATION.cff`](CITATION.cff); the
-"Cite this repository" button on GitHub gives APA and BibTeX):
+If you use KAMD in published work, please cite **both** the method paper and the software:
+
+1. **Method:** H. Wei, Enhanced Sampling on Domain/Motif Level with Kinetic Accelerated Molecular Dynamics.
+   *J. Chem. Inf. Model.* **2026**, *66* (7), 4116–4129.
+   [doi:10.1021/acs.jcim.5c03093](https://doi.org/10.1021/acs.jcim.5c03093)
+2. **Software:** Z. Huang, Y. Duan, R. Luo, H. Wei, KAMD: Kinetic Accelerated Molecular Dynamics for Amber,
+   GROMACS and OpenMM. Zenodo, **2026**.
+   [doi:10.5281/zenodo.23755858](https://doi.org/10.5281/zenodo.23755858)
+
+Which software DOI to use:
+* [10.5281/zenodo.23755858](https://doi.org/10.5281/zenodo.23755858) is the *concept* DOI. It covers all
+  versions and always resolves to the latest release. Use it for general citations.
+* Each release also has its own DOI, for example
+  [10.5281/zenodo.23755860](https://doi.org/10.5281/zenodo.23755860) for v0.1.0. Use the version DOI (and
+  state the version in your methods section) when you need to identify the exact code that produced your results.
+
+Please also cite the MD engine you ran KAMD in (Amber, GROMACS or OpenMM), following that engine's own
+citation instructions.
+
+BibTeX:
 
 ```bibtex
 @article{Wei2026KAMD,
@@ -75,13 +94,8 @@ If you use KAMD, please cite the method paper and this software (see [`CITATION.
   year    = {2026},
   doi     = {10.1021/acs.jcim.5c03093}
 }
-```
 
-Software (concept DOI, always resolves to the latest release; version 0.1.0 is
-[10.5281/zenodo.23755860](https://doi.org/10.5281/zenodo.23755860)):
-
-```bibtex
-@software{kamd_software,
+@software{Huang2026KAMDsoftware,
   author    = {Huang, Zhen and Duan, Yong and Luo, Ray and Wei, Haixin},
   title     = {{KAMD: Kinetic Accelerated Molecular Dynamics for Amber, GROMACS and OpenMM}},
   publisher = {Zenodo},
@@ -90,6 +104,9 @@ Software (concept DOI, always resolves to the latest release; version 0.1.0 is
   url       = {https://github.com/larryhuang98/kamd}
 }
 ```
+
+The same information is in [`CITATION.cff`](CITATION.cff); the "Cite this repository" button on the GitHub page
+exports it as APA or BibTeX.
 
 ## Licenses
 
