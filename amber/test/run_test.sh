@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 PREC="${1:-SPFP}"
-PMEMD="${AMBERHOME:?set AMBERHOME to the KAMD-patched Amber 26 install}/bin/pmemd.cuda_${PREC}"
+PMEMD="${AMBERHOME:?set AMBERHOME to the Amber 26 install built with KAMD}/bin/pmemd.cuda_${PREC}"
 "$PMEMD" -O -i md_test.in -p prmtop -c restrt -o md_test.out -r md_test.rst
 n=$(grep -c "KAMD: velocity reset, group 1," md_test.out || true)
 first=$(grep -m1 "KAMD: velocity reset, group 1," md_test.out | awk '{print $NF}')

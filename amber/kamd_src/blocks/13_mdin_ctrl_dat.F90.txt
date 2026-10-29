@@ -1,0 +1,2 @@
+  integer, dimension(KAMD_MAX_GROUPS) :: refer_link
+  integer, dimension(KAMD_MAX_GROUPS) :: region_type

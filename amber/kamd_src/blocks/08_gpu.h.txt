@@ -1,0 +1,31 @@
+// KAMD kernel launchers (defined in kKAMD.h, compiled in kForcesUpdate.cu)
+extern "C" void kKAMD_FindFirstShell(gpuContext gpu, int totalRefAtoms);
+extern "C" void kKAMD_RedirectVelocities(gpuContext gpu,
+                                           double* pRandomDir, int* pRefGroupMap,
+                                           double half_dtx);
+extern "C" void kKAMD_ComputeMomenta(gpuContext gpu, int totalRefAtoms);
+extern "C" void kKAMD_GatherIons(gpuContext gpu, int nIons);
+extern "C" void kKAMD_MemCOM(gpuContext gpu, int mStart0, int mEnd0);
+extern "C" void kKAMD_RedirectMembraneMolecules(gpuContext gpu,
+                                                  double* pRandomDir,
+                                                  double half_dtx);
+
+extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
+                                 int* total_ref_atoms,
+                                 int* region_type,
+                                 int* solvent_start, int* solvent_end,
+                                 int* membrane_start, int* membrane_end,
+                                 int* membrane_axis,
+                                 double* shell_cut, double* surface_cut,
+                                 double* membrane_cut,
+                                 int* ngroups,
+                                 int* residue_starts, int* nres,
+                                 int* shell_mode, double* shell_max_angle);
+extern "C" void gpu_kamd_compute_momenta_(double* momenta);
+extern "C" void gpu_kamd_download_record_(int* result_record, int* natoms);
+extern "C" void gpu_kamd_download_packed_(double* r2_out, int* group_out, int* natoms);
+extern "C" void gpu_kamd_pseudobd_reset_(double* random_direction,
+                                          int* ngroups, double* half_dtx);
+extern "C" void gpu_kamd_ion_setup_(int* ion_atoms, int* nions);
+extern "C" void gpu_kamd_ion_gather_(double* ion_xyz, double* com,
+                                      int* membrane_start, int* membrane_end);

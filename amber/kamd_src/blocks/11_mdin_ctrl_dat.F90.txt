@@ -1,0 +1,9 @@
+  ! KAMD: cap on number of reference groups.  GPU buffers (pbKAMDRandomDir,
+  ! pbKAMDMomenta) are sized at runtime to ngroups*3, so this only sets the
+  ! ceiling on namelist-array dimensions.  Memory cost at 32: trivial (~few KB).
+  integer, parameter, public :: KAMD_MAX_GROUPS = 32
+
+  ! KAMD region types
+  integer, parameter, public :: KAMD_RT_SOLUTION     = 1
+  integer, parameter, public :: KAMD_RT_TRANSMEMBRANE = 2
+

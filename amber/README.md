@@ -6,8 +6,8 @@ plain pmemd.cuda.
 
 ## Requirements
 
-* **Amber 26 source** (pmemd26 + AmberTools26). The patch was made against the `Amber26_release` tag of the
-  Amber git repository (2026-04-24). A licensed Amber 26 source distribution is required. This repository
+* **Amber 26 source** (pmemd26 + AmberTools26). The installer was made and tested against the `Amber26_release`
+  tag of the Amber git repository (2026-04-24). A licensed Amber 26 source distribution is required. This repository
   contains only the KAMD changes.
 * **The usual Amber 26 build requirements** (CMake, a C/C++/Fortran compiler, CUDA).
   * Tested with CMake 3.31.6, GCC/gfortran 11.3.0 and CUDA 12.8 on RHEL 8, on RTX 4090 and RTX 5090 GPUs.
@@ -16,27 +16,43 @@ plain pmemd.cuda.
 
 ## Install
 
+KAMD is added to an existing Amber 26 source tree by a small program, `kamd_install.py`, which edits the pmemd
+source in place. It needs only Python 3.6 or newer (standard library) and changes nothing outside `src/pmemd/src/`.
+
 ```bash
-# 1. unpack Amber 26 as usual
+# 1. unpack Amber 26 as usual (and apply official updates first, if you use them)
 tar xjf AmberTools26.tar.bz2
 tar xjf pmemd26.tar.bz2
-cd pmemd26_src            # the top-level source directory (contains AmberTools/ and src/pmemd/)
+cd pmemd26_src                       # the source directory that contains src/pmemd/
 
-# 2. apply the KAMD patch
-patch -p1 < /path/to/kamd/amber/kamd-pmemd-amber26.patch
-# Expected: 12 files patched, "succeeded at ... (offset N lines)" messages are fine,
-# no "FAILED" hunks. A dry run first: patch -p1 --dry-run < ...
+# 2. add KAMD to pmemd
+python3 /path/to/kamd/amber/kamd_install.py --check .   # dry run: every edit must report [ ok ]
+python3 /path/to/kamd/amber/kamd_install.py .           # install
 
-# 3. build pmemd.cuda as usual (CUDA=TRUE). Either edit and run build/run_cmake, or:
+# 3. build Amber with CUDA as usual. Either edit and run build/run_cmake, or:
 mkdir build_kamd && cd build_kamd
 cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/amber26_kamd -DCOMPILER=GNU -DMPI=FALSE -DCUDA=TRUE \
          -DDOWNLOAD_MINICONDA=FALSE -DCHECK_UPDATES=FALSE -DAPPLY_UPDATES=FALSE
 make -j 16 install
 ```
 
-**If Amber updates are applied.** Apply `update_amber` patches **before** the KAMD patch. If a later official Amber
-update touches the same lines, re-apply the KAMD patch to the updated source (`patch -p1 --dry-run` shows any
-conflicts).
+What the installer does:
+* It applies 25 small edits to 11 pmemd files and adds one file (`src/pmemd/src/cuda/kKAMD.h`). Each edit is
+  located by a few lines of unchanged Amber code that must occur exactly once (differences in indentation or
+  trailing spaces are tolerated). The KAMD code it inserts is in [`kamd_src/blocks/`](kamd_src/blocks/), and the
+  locations are listed in [`kamd_src/manifest.json`](kamd_src/manifest.json).
+* All edits are checked before anything is written. If one cannot be placed (for example in a different Amber
+  version, or after an Amber update that touched the same lines), it names the edit and changes nothing.
+* The original files are kept in `src/pmemd/src/.kamd_backup/`. `src/pmemd/src/.kamd_install.json` records what
+  was changed.
+* `python3 kamd_install.py --uninstall .` restores the original files (then rebuild). It refuses if you have
+  edited a patched file since; add `--force` to restore anyway.
+* It refuses to run twice, or on a tree that already contains KAMD.
+* With no directory argument it uses `$AMBERHOME`.
+
+Verification: on a pristine `Amber26_release` source tree, the installer produces source files byte-identical to
+the tree that was built and tested here (smoke test and validation below). Uninstalling restores the pristine
+files exactly.
 
 ## Use
 

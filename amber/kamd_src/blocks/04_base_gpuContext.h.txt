@@ -1,0 +1,21 @@
+
+  // KAMD first-shell detection and velocity redirection buffers
+  GpuBuffer<int>*          pbKAMDRecord;             // Per-atom closest reference group
+  GpuBuffer<unsigned long long>* pbKAMDPacked;       // Per-atom (dist^2 bits << 32) | group
+  GpuBuffer<int2>*         pbKAMDRefAtomInfo;        // Per-ref-atom: {original_index, group_number}
+  GpuBuffer<double>*       pbKAMDRandomDir;          // ngroups normalized direction vectors (ngroups*3 doubles)
+  GpuBuffer<int>*          pbKAMDRefGroupMap;        // Per-atom: group number for surface ref atoms
+  GpuBuffer<double>*       pbKAMDMomenta;            // ngroups * 3 components doubles
+  GpuBuffer<int>*          pbKAMDRegionType;         // Per-group region type: 1=solution, 2=transmembrane
+  GpuBuffer<int2>*         pbKAMDMembraneMol;        // Complete membrane residue atom ranges, 0-based inclusive
+  GpuBuffer<int>*          pbKAMDMembraneOwner;      // Previous owner for contact hysteresis
+  GpuBuffer<double>*       pbKAMDMembraneImpulse;    // Lateral impulse, total lipid mass, selected count
+  int                      nKAMDMembraneMol;
+  int                      kamdShellMode;
+  double                   kamdShellMaxAngle;
+  bool                     bKAMDSetupDone;           // One-time setup completed flag
+
+  // KAMD ion-trajectory output buffers
+  GpuBuffer<int>*          pbKAMDIons;              // ion atom indices (0-based), length nIons
+  GpuBuffer<double>*       pbKAMDIonCrd;            // compact ion xyz (3*nIons) download buffer
+  GpuBuffer<double>*       pbKAMDIonCOMacc;         // membrane COM accumulator (4 doubles: mx,my,mz,m)

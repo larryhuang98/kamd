@@ -1,0 +1,1 @@
+  use gbl_constants_mod, only : KB, ONE_AMBER_ELECTROSTATIC

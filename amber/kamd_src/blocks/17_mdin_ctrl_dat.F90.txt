@@ -1,0 +1,3 @@
+                                shell_cut, surface_cut, membrane_cut, & !179 KAMD cutoffs
+                                kamd_shell_max_angle, kamd_shell_area_floor, kamd_shell_area_reference, &
+                                ala,arg,asn,asp,cys,gln,glu,gly,his,hip,ile,leu,lys,met,phe,pro,ser,thr,triptophan,tyr,valine,bb !201

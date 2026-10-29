@@ -1,0 +1,17 @@
+  ! KAMD locals.  Per-group arrays use KAMD_MAX_GROUPS so that lifting the
+  ! GPU buffer cap later only requires changing the parameter.
+  double precision      :: tmp_vel(3, atm_cnt)
+  double precision      :: distance_record(atm_cnt)
+  double precision      :: tmp_crd(3, atm_cnt), tmp_frc(3, atm_cnt)
+  double precision      :: relative_dis(3), random_direction(3, KAMD_MAX_GROUPS)
+  double precision      :: moment(3, KAMD_MAX_GROUPS), moment_last(3, KAMD_MAX_GROUPS)
+  double precision      :: refer_mass(KAMD_MAX_GROUPS)
+  double precision      :: tmp_xmin, tmp_xmax, tmp_ymin, tmp_ymax, tmp_zmin, tmp_zmax
+  integer               :: tmp_mark(atm_cnt), tmp_record(atm_cnt)
+  integer               :: tmp_count(KAMD_MAX_GROUPS)
+  double precision      :: kamd_cut2, kamd_surface_cut2
+  integer               :: kamd_g, kamd_a, kamd_off, kamd_cnt
+  integer               :: kamd_shell_last_reset
+  double precision      :: kamd_shell_initial_area, kamd_shell_area
+  logical               :: kamd_shell_ready, kamd_shell_gate_logged
+

@@ -1,0 +1,3 @@
+  ! KAMD inputs live in their own &kamd namelist (optional; absent => disabled).
+  call read_kamd_namelist()
+

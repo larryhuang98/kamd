@@ -1,0 +1,283 @@
+{
+ "kamd_version": "0.1.0",
+ "amber": "26",
+ "new_files": [
+  {
+   "file": "src/pmemd/src/cuda/kKAMD.h",
+   "source": "files/kKAMD.h"
+  }
+ ],
+ "edits": [
+  {
+   "id": 1,
+   "file": "src/pmemd/src/cuda/Makefile",
+   "before": [],
+   "old": [
+    "                        kRV.h kAFECalls.h kAFEKernels.h kSGLD.h\n"
+   ],
+   "after": [],
+   "block": "blocks/01_Makefile.txt"
+  },
+  {
+   "id": 2,
+   "file": "src/pmemd/src/cuda/base_gpuContext.cpp",
+   "before": [],
+   "old": [
+    "  pbNLbSkinTestFail(NULL), pbNLCellHash(NULL), pbNLRecord(NULL), pbNLEntry(NULL),\n"
+   ],
+   "after": [],
+   "block": "blocks/02_base_gpuContext.cpp.txt"
+  },
+  {
+   "id": 3,
+   "file": "src/pmemd/src/cuda/base_gpuContext.cpp",
+   "before": [
+    "  delete pbNLCellHash;\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/03_base_gpuContext.cpp.txt"
+  },
+  {
+   "id": 4,
+   "file": "src/pmemd/src/cuda/base_gpuContext.h",
+   "before": [
+    "  GpuBuffer<unsigned int>* pbNLCellHash;             // Spatial ordering hash for within cells\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/04_base_gpuContext.h.txt"
+  },
+  {
+   "id": 5,
+   "file": "src/pmemd/src/cuda/base_simulationConst.cpp",
+   "before": [
+    "  pNLExclusionList             = NULL;\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/05_base_simulationConst.cpp.txt"
+  },
+  {
+   "id": 6,
+   "file": "src/pmemd/src/cuda/base_simulationConst.h",
+   "before": [
+    "  unsigned int NLExclusions;               // Total number of exclusions\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/06_base_simulationConst.h.txt"
+  },
+  {
+   "id": 7,
+   "file": "src/pmemd/src/cuda/gpu.cpp",
+   "before": [
+    "  kResetVelocities(gpu, *temp, *half_dtx);\n",
+    "}\n",
+    "\n",
+    "//---------------------------------------------------------------------------------------------\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/07_gpu.cpp.txt"
+  },
+  {
+   "id": 8,
+   "file": "src/pmemd/src/cuda/gpu.h",
+   "before": [
+    "extern \"C\" void gpu_force_new_neighborlist_();\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/08_gpu.h.txt"
+  },
+  {
+   "id": 9,
+   "file": "src/pmemd/src/cuda/kForcesUpdate.cu",
+   "before": [
+    "CSIM_STO simulationConst cSim;\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/09_kForcesUpdate.cu.txt"
+  },
+  {
+   "id": 10,
+   "file": "src/pmemd/src/master_setup.F90",
+   "before": [
+    "  if(mcwat .gt. 0) call init_mcwat_mask(natom, nres, atm_igraph, atm_isymbl, &\n",
+    "                           gbl_res_atms, gbl_labres, atm_crd)\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/10_master_setup.F90.txt"
+  },
+  {
+   "id": 11,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "  logical :: usemidpoint\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/11_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 12,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "                                ipgm, ivdwopt   ! PGM   ipgm will be moved to prmtop, eventually to prevent accidentally misuse\n"
+   ],
+   "after": [],
+   "block": "blocks/12_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 13,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "  integer, dimension(4)::  rmsd_ti, ldcr_ti\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/13_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 14,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "             ipgm, ivdwopt ! 186 (PGM and alternative VDW)\n"
+   ],
+   "after": [],
+   "block": "blocks/14_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 15,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "  integer, parameter    :: mdin_ctrl_int_cnt = 194 !! add 8 for the two extra arrays; +1 for de_schedule; +1 for elec_schedule; +1 for ifsc_degauss\n"
+   ],
+   "after": [],
+   "block": "blocks/15_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 16,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "                                vel_scale_t, & \n"
+   ],
+   "after": [],
+   "block": "blocks/16_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 17,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "                                ala,arg,asn,asp,cys,gln,glu,gly,his,hip,ile,leu,lys,met,phe,pro,ser,thr,triptophan,tyr,valine,bb !198\n"
+   ],
+   "after": [],
+   "block": "blocks/17_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 18,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [],
+   "old": [
+    "  integer, parameter    :: mdin_ctrl_dbl_cnt = 20207  ! +4 for DEGAUSS +3 for DEGAUSS TI VDW +2 for DEGAUSS TI elec (sigma_max,elec_schedule_c)\n"
+   ],
+   "after": [],
+   "block": "blocks/18_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 19,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "  save  :: / mdin_ctrl_dbl /\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/19_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 20,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "  mcresstr = '    '\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/20_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 21,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "    write(mdout, '(a,a)') error_hdr, 'Could not find cntrl namelist'\n",
+    "    call mexit(6, 1)\n",
+    "  end if\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/21_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 22,
+   "file": "src/pmemd/src/mdin_ctrl_dat.F90",
+   "before": [
+    "end subroutine init_mdin_ctrl_dat\n",
+    "\n",
+    "!*******************************************************************************\n",
+    "!\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/22_mdin_ctrl_dat.F90.txt"
+  },
+  {
+   "id": 23,
+   "file": "src/pmemd/src/runmd.F90",
+   "before": [],
+   "old": [
+    "  use gbl_constants_mod, only : KB\n"
+   ],
+   "after": [],
+   "block": "blocks/23_runmd.F90.txt"
+  },
+  {
+   "id": 24,
+   "file": "src/pmemd/src/runmd.F90",
+   "before": [
+    "  logical               :: resv_exchged\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/24_runmd.F90.txt"
+  },
+  {
+   "id": 25,
+   "file": "src/pmemd/src/runmd.F90",
+   "before": [
+    "        dble(wall_u) / 1000.0d0 - strt_time_ms\n",
+    "\n",
+    "      call get_wall_time(wall_s, wall_u)\n",
+    "      strt_time_ms = dble(wall_s) * 1000.0d0 + dble(wall_u) / 1000.0d0\n",
+    "#endif\n",
+    "\n"
+   ],
+   "old": [],
+   "after": [],
+   "block": "blocks/25_runmd.F90.txt"
+  }
+ ]
+}

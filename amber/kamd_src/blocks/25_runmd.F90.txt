@@ -1,0 +1,463 @@
+! KAMD (Kinetically Accelerated MD) — see doc/kamd/kamd_implementation.tex.
+! Current functionality in this block includes:
+!   - mask-resolved reference groups (kamd_refer_* lists)
+!   - optional linked group directions via refer_link(:)
+!   - mixed region handling (solution vs transmembrane via region_type(:))
+!   - distinct solvent/membrane baths and membrane-axis-aware TM redirects
+!   - optional one-shot CPU/GPU diagnostic dump via KAMD_DIAG=1
+#ifdef CUDA
+if (pseudobd_cycles > 0) then
+
+  ! ---- One-time setup at simulation start --------------------------------
+  if (total_nstep .eq. 0) then
+    moment       = 0.0d0
+    moment_last  = 0.0d0
+    tmp_count    = 0
+    refer_mass   = 0.0d0
+    kamd_shell_last_reset = -huge(1)/2
+    select case (membrane_axis)
+    case (1)
+      kamd_shell_initial_area = pbc_box(2) * pbc_box(3)
+    case (2)
+      kamd_shell_initial_area = pbc_box(1) * pbc_box(3)
+    case default
+      kamd_shell_initial_area = pbc_box(1) * pbc_box(2)
+    end select
+    if (kamd_shell_area_reference > 0.0d0) kamd_shell_initial_area = kamd_shell_area_reference
+    if (kamd_shell_mode == 1) then
+      write(mdout,'(a,f16.4)') ' KAMD shell: reference membrane area (A^2) = ', kamd_shell_initial_area
+    end if
+    kamd_shell_gate_logged = .false.
+    do kamd_g = 1, kamd_ngroups
+      kamd_off = kamd_refer_offset(kamd_g)
+      kamd_cnt = kamd_refer_count(kamd_g)
+      refer_mass(kamd_g) = sum(mass(kamd_refer_atoms(kamd_off+1 : kamd_off+kamd_cnt)))
+    end do
+
+    ! Upload the resolved (atom, group) lists, region types, bath ranges, and
+    ! cutoffs.  All of these are constants for the rest of the run.
+    call gpu_kamd_setup(kamd_refer_atoms, kamd_refer_groups, kamd_total_ref_atoms, &
+                        region_type, &
+                        kamd_solvent_start, kamd_solvent_end, &
+                        kamd_membrane_start, kamd_membrane_end, &
+                        membrane_axis, &
+                        shell_cut, surface_cut, membrane_cut, &
+                        kamd_ngroups, gbl_res_atms, nres, &
+                        kamd_shell_mode, kamd_shell_max_angle)
+  end if
+
+  ! ---- Per-cycle momentum monitoring -------------------------------------
+  if (mod((total_nstep+1), pseudobd_cycles) .eq. 0) then
+    call gpu_kamd_compute_momenta(moment)
+
+    relative_dis = sum(moment(:, 1:kamd_ngroups), dim=2) / sum(refer_mass(1:kamd_ngroups))
+
+    do kamd_g = 1, kamd_ngroups
+      moment(:, kamd_g) = moment(:, kamd_g) - refer_mass(kamd_g) * relative_dis
+      if (region_type(kamd_g) == KAMD_RT_TRANSMEMBRANE) moment(membrane_axis, kamd_g) = 0.0d0
+      moment(:, kamd_g) = dot_product(moment(:, kamd_g), relative_dis)
+      if (moment(1, kamd_g) * moment_last(1, kamd_g) < 0.0d0 .and. &
+          tmp_count(kamd_g) < nzero_crossings) then
+        tmp_count(kamd_g) = tmp_count(kamd_g) + 1
+      end if
+    end do
+    ! Inactive group slots stay at nzero_crossings so they don't gate the reset.
+    do kamd_g = kamd_ngroups + 1, KAMD_MAX_GROUPS
+      tmp_count(kamd_g) = nzero_crossings
+    end do
+    moment_last = moment
+  end if
+
+  ! ---- Pseudo-Brownian dynamics reset ------------------------------------
+  ! Trigger: every active group has used its zero-crossing budget.
+select case (membrane_axis)
+case (1)
+  kamd_shell_area = pbc_box(2) * pbc_box(3)
+case (2)
+  kamd_shell_area = pbc_box(1) * pbc_box(3)
+case default
+  kamd_shell_area = pbc_box(1) * pbc_box(2)
+end select
+kamd_shell_ready = .true.
+if (kamd_shell_mode == 1) then
+  kamd_shell_ready = total_nstep + 1 - kamd_shell_last_reset >= kamd_shell_relax_steps
+  if (kamd_shell_area_floor > 0.0d0) then
+    kamd_shell_ready = kamd_shell_ready .and. &
+      kamd_shell_area >= kamd_shell_area_floor * kamd_shell_initial_area
+  end if
+end if
+if (sum(tmp_count(1:kamd_ngroups)) .eq. nzero_crossings * kamd_ngroups .and. kamd_shell_ready) then
+  kamd_shell_gate_logged = .false.
+  write(mdout, '(a,i12)') ' KAMD_DBG RESET FIRED at nstep=', total_nstep+1
+  kamd_shell_last_reset = total_nstep + 1
+
+  moment       = 0.0d0
+  moment_last  = 0.0d0
+  tmp_count    = 0
+
+  ! Step 1: Resample all velocities from Maxwell-Boltzmann on the GPU.
+  call gpu_vrand_reset_velocities(temp0 * factt, half_dtx)
+
+  ! Step 2: Generate per-group random direction vectors (cheap; CPU side).
+  !         refer_link(g) > 0 means group g shares the direction of group refer_link(g).
+  call vrand_set_velocities(kamd_ngroups, random_direction, atm_mass_inv, temp0 * factt)
+  do kamd_g = 1, kamd_ngroups
+    if (refer_link(kamd_g) > 0) then
+      random_direction(:, kamd_g) = random_direction(:, refer_link(kamd_g))
+    end if
+  end do
+
+  ! Transmembrane regions: project out the membrane-axis component and renormalize
+  ! the remaining 2D vector in the perpendicular plane.  The GPU redirect kernel
+  ! preserves v_par along membrane_axis and randomizes the perp components only.
+  do kamd_g = 1, kamd_ngroups
+    if (region_type(kamd_g) == KAMD_RT_TRANSMEMBRANE) then
+      random_direction(membrane_axis, kamd_g) = 0.0d0
+      wfac = sqrt(dot_product(random_direction(:, kamd_g), random_direction(:, kamd_g)))
+      if (wfac > 1.0d-10) then
+        random_direction(:, kamd_g) = random_direction(:, kamd_g) / wfac
+      else
+        ! Pathological: the sampled vector was (essentially) along membrane_axis.
+        ! Fall back to a fixed perpendicular direction; rare enough to be benign.
+        random_direction(:, kamd_g) = 0.0d0
+        if (membrane_axis == 1) then
+          random_direction(2, kamd_g) = 1.0d0
+        else
+          random_direction(1, kamd_g) = 1.0d0
+        end if
+      end if
+    end if
+  end do
+
+  kamd_cut2         = shell_cut   * shell_cut
+  kamd_surface_cut2 = surface_cut * surface_cut
+
+  ! =========================================================================
+  ! DIAGNOSTIC: at the first KAMD reset, run a brute-force CPU first-shell
+  ! loop on the exact same downloaded state, then run the GPU kernel as usual,
+  ! then dump both result sets and exit.  Activated by env KAMD_DIAG=1.
+  !
+  ! NB: bounding-box prefilter assumes an orthogonal box.  The CPU reference
+  ! mirrors the original Haixin algorithm (same min-image, same surface mark),
+  ! generalised to iterate the resolved per-group atom lists rather than
+  ! contiguous start..end ranges.
+  ! =========================================================================
+  block
+    character(len=32) :: diag_env
+    integer :: diag_unit_cpu, diag_unit_gpu, diag_i, diag_j, diag_jj, diag_g
+    integer :: gpu_record_buf(atm_cnt), gpu_group_buf(atm_cnt)
+    double precision :: gpu_r2_buf(atm_cnt)
+    logical, save :: diag_done = .false.
+    call get_environment_variable('KAMD_DIAG', diag_env)
+    if ((trim(diag_env) == '1') .and. (.not. diag_done)) then
+      diag_done = .true.
+      write(mdout,'(a,i10)') ' KAMD-DIAG: first-reset diagnostic at step ', total_nstep + 1
+
+      ! Pull the state the GPU kernel will see.  pImageVel was just set by
+      ! gpu_vrand_reset_velocities; pImageX is the current coords; forces are
+      ! the ones from the last force calc on this step.
+      call gpu_download_crd(tmp_crd)
+      call wrap_molecules(tmp_crd)
+      call gpu_download_vel(tmp_vel)
+      call gpu_download_frc(tmp_frc)
+
+      ! --- CPU reference first-shell algorithm over kamd_ngroups groups ---
+      distance_record = kamd_cut2
+      tmp_record      = 0
+      do diag_g = 1, kamd_ngroups
+        kamd_off = kamd_refer_offset(diag_g)
+        kamd_cnt = kamd_refer_count(diag_g)
+        diag_j = kamd_refer_atoms(kamd_off + 1)
+        tmp_xmin = tmp_crd(1, diag_j); tmp_xmax = tmp_xmin
+        tmp_ymin = tmp_crd(2, diag_j); tmp_ymax = tmp_ymin
+        tmp_zmin = tmp_crd(3, diag_j); tmp_zmax = tmp_zmin
+        do diag_jj = 1, kamd_cnt
+          diag_j = kamd_refer_atoms(kamd_off + diag_jj)
+          if (tmp_crd(1,diag_j) < tmp_xmin) tmp_xmin = tmp_crd(1,diag_j)
+          if (tmp_crd(2,diag_j) < tmp_ymin) tmp_ymin = tmp_crd(2,diag_j)
+          if (tmp_crd(3,diag_j) < tmp_zmin) tmp_zmin = tmp_crd(3,diag_j)
+          if (tmp_crd(1,diag_j) > tmp_xmax) tmp_xmax = tmp_crd(1,diag_j)
+          if (tmp_crd(2,diag_j) > tmp_ymax) tmp_ymax = tmp_crd(2,diag_j)
+          if (tmp_crd(3,diag_j) > tmp_zmax) tmp_zmax = tmp_crd(3,diag_j)
+        end do
+        tmp_xmin = tmp_xmin - shell_cut
+        tmp_ymin = tmp_ymin - shell_cut
+        tmp_zmin = tmp_zmin - shell_cut
+        tmp_xmax = tmp_xmax + shell_cut
+        tmp_ymax = tmp_ymax + shell_cut
+        tmp_zmax = tmp_zmax + shell_cut
+        tmp_mark = 0
+        do diag_j = kamd_solvent_start, kamd_solvent_end
+          if ((tmp_crd(1,diag_j) > tmp_xmin .and. tmp_crd(1,diag_j) < tmp_xmax) .or. &
+              (tmp_crd(1,diag_j) > tmp_xmin+pbc_box(1) .and. tmp_crd(1,diag_j) < tmp_xmax+pbc_box(1)) .or. &
+              (tmp_crd(1,diag_j) > tmp_xmin-pbc_box(1) .and. tmp_crd(1,diag_j) < tmp_xmax-pbc_box(1))) then
+          if ((tmp_crd(2,diag_j) > tmp_ymin .and. tmp_crd(2,diag_j) < tmp_ymax) .or. &
+              (tmp_crd(2,diag_j) > tmp_ymin+pbc_box(2) .and. tmp_crd(2,diag_j) < tmp_ymax+pbc_box(2)) .or. &
+              (tmp_crd(2,diag_j) > tmp_ymin-pbc_box(2) .and. tmp_crd(2,diag_j) < tmp_ymax-pbc_box(2))) then
+          if ((tmp_crd(3,diag_j) > tmp_zmin .and. tmp_crd(3,diag_j) < tmp_zmax) .or. &
+              (tmp_crd(3,diag_j) > tmp_zmin+pbc_box(3) .and. tmp_crd(3,diag_j) < tmp_zmax+pbc_box(3)) .or. &
+              (tmp_crd(3,diag_j) > tmp_zmin-pbc_box(3) .and. tmp_crd(3,diag_j) < tmp_zmax-pbc_box(3))) then
+            tmp_mark(diag_j) = 1
+          end if
+          end if
+          end if
+        end do
+        do diag_jj = 1, kamd_cnt
+          diag_j = kamd_refer_atoms(kamd_off + diag_jj)
+          do diag_i = kamd_solvent_start, kamd_solvent_end
+            if (tmp_mark(diag_i) .eq. 1) then
+              relative_dis(1) = min(abs(tmp_crd(1,diag_j)-tmp_crd(1,diag_i)), &
+                                    pbc_box(1)-abs(tmp_crd(1,diag_j)-tmp_crd(1,diag_i)))
+              relative_dis(2) = min(abs(tmp_crd(2,diag_j)-tmp_crd(2,diag_i)), &
+                                    pbc_box(2)-abs(tmp_crd(2,diag_j)-tmp_crd(2,diag_i)))
+              relative_dis(3) = min(abs(tmp_crd(3,diag_j)-tmp_crd(3,diag_i)), &
+                                    pbc_box(3)-abs(tmp_crd(3,diag_j)-tmp_crd(3,diag_i)))
+              scaltp = dot_product(relative_dis, relative_dis)
+              if (scaltp < kamd_surface_cut2) tmp_record(diag_j) = 1
+              if (scaltp < distance_record(diag_i)) then
+                tmp_record(diag_i)      = diag_g
+                distance_record(diag_i) = scaltp
+              end if
+            end if
+          end do
+        end do
+      end do
+
+      ! --- Dump CPU-side records ---
+      open(newunit=diag_unit_cpu, file='kamd_diag_cpu.txt', status='replace', action='write')
+      write(diag_unit_cpu,'(a)') '# atom_index(1-based) tmp_record distance_record_r2(double)'
+      do diag_i = 1, atm_cnt
+        if (tmp_record(diag_i) /= 0) then
+          write(diag_unit_cpu,'(i10,1x,i4,1x,es23.16)') diag_i, tmp_record(diag_i), distance_record(diag_i)
+        end if
+      end do
+      close(diag_unit_cpu)
+
+      ! --- Apply CPU reference redirect on the snapshot and save the expected vels ---
+      ! tmp_vel is currently the half-step velocity right after gpu_vrand_reset_velocities.
+      ! Apply the leapfrog half-step force correction, redirect, step back.
+      block
+        integer :: diag_k
+        double precision :: cpu_vel_expected(3, atm_cnt)
+        double precision :: diag_norm
+        double precision :: diag_dir(3, KAMD_MAX_GROUPS)
+
+        cpu_vel_expected = tmp_vel
+        do diag_k = 1, atm_cnt
+          wfac = atm_mass_inv(diag_k) * half_dtx
+          cpu_vel_expected(:, diag_k) = cpu_vel_expected(:, diag_k) + tmp_frc(:, diag_k) * wfac
+        end do
+
+        ! Pre-normalize per-group direction vectors.
+        diag_dir = 0.0d0
+        do diag_g = 1, kamd_ngroups
+          diag_norm = sqrt(dot_product(random_direction(:, diag_g), random_direction(:, diag_g)))
+          if (diag_norm > 0.0d0) diag_dir(:, diag_g) = random_direction(:, diag_g) / diag_norm
+        end do
+
+        ! Redirect solvent atoms assigned to a group.
+        do diag_i = kamd_solvent_start, kamd_solvent_end
+          diag_g = tmp_record(diag_i)
+          if (diag_g >= 1 .and. diag_g <= kamd_ngroups) then
+            wfac = sqrt(dot_product(cpu_vel_expected(:,diag_i), cpu_vel_expected(:,diag_i)))
+            cpu_vel_expected(:, diag_i) = diag_dir(:, diag_g) * wfac
+          end if
+        end do
+        ! Redirect surface ref atoms (tmp_record==1 inside each group's atom list).
+        do diag_g = 1, kamd_ngroups
+          kamd_off = kamd_refer_offset(diag_g)
+          kamd_cnt = kamd_refer_count(diag_g)
+          do diag_jj = 1, kamd_cnt
+            diag_i = kamd_refer_atoms(kamd_off + diag_jj)
+            if (tmp_record(diag_i) .eq. 1) then
+              wfac = sqrt(dot_product(cpu_vel_expected(:,diag_i), cpu_vel_expected(:,diag_i)))
+              cpu_vel_expected(:, diag_i) = diag_dir(:, diag_g) * wfac
+            end if
+          end do
+        end do
+        ! Final back-step for leapfrog.
+        do diag_k = 1, atm_cnt
+          wfac = atm_mass_inv(diag_k) * half_dtx
+          cpu_vel_expected(:, diag_k) = cpu_vel_expected(:, diag_k) - tmp_frc(:, diag_k) * wfac
+        end do
+
+        ! --- Run the GPU kernel and pull back the resulting velocities ---
+        call gpu_kamd_pseudobd_reset(random_direction, kamd_ngroups, half_dtx)
+        gpu_record_buf = 0
+        gpu_group_buf  = 0
+        gpu_r2_buf     = kamd_cut2
+        call gpu_kamd_download_record(gpu_record_buf, atm_cnt)
+        call gpu_kamd_download_packed(gpu_r2_buf, gpu_group_buf, atm_cnt)
+        ! reuse tmp_vel to read the post-kernel velocities
+        call gpu_download_vel(tmp_vel)
+
+        ! --- Dump velocity-diff for flagged atoms ---
+        block
+          integer :: diag_unit_v
+          double precision :: dx, dy, dz, rel, maxrel
+          integer :: nmis_exact, nflagged
+          maxrel = 0.0d0
+          nmis_exact = 0
+          nflagged = 0
+          open(newunit=diag_unit_v, file='kamd_diag_vel.txt', status='replace', action='write')
+          write(diag_unit_v,'(a)') '# atom group cpu_vx cpu_vy cpu_vz gpu_vx gpu_vy gpu_vz relerr'
+          do diag_i = 1, atm_cnt
+            if (tmp_record(diag_i) /= 0) then
+              nflagged = nflagged + 1
+              dx = tmp_vel(1,diag_i) - cpu_vel_expected(1,diag_i)
+              dy = tmp_vel(2,diag_i) - cpu_vel_expected(2,diag_i)
+              dz = tmp_vel(3,diag_i) - cpu_vel_expected(3,diag_i)
+              rel = sqrt(dx*dx+dy*dy+dz*dz) / &
+                    max(1.0d-30, sqrt(dot_product(cpu_vel_expected(:,diag_i), cpu_vel_expected(:,diag_i))))
+              if (rel > maxrel) maxrel = rel
+              if (dx /= 0.0d0 .or. dy /= 0.0d0 .or. dz /= 0.0d0) nmis_exact = nmis_exact + 1
+              if (rel > 1.0d-14) then
+                write(diag_unit_v,'(i10,1x,i4,6(1x,es23.16),1x,es12.5)') diag_i, tmp_record(diag_i), &
+                    cpu_vel_expected(1,diag_i), cpu_vel_expected(2,diag_i), cpu_vel_expected(3,diag_i), &
+                    tmp_vel(1,diag_i), tmp_vel(2,diag_i), tmp_vel(3,diag_i), rel
+              end if
+            end if
+          end do
+          close(diag_unit_v)
+          write(mdout,'(a,i0,a,i0,a,es12.5)') &
+              ' KAMD-DIAG: flagged=', nflagged, '  non-bit-identical=', nmis_exact, '  max_rel_err=', maxrel
+        end block
+        block
+          integer :: dump_unit, diag_nunflagged
+          double precision :: dxx, dyy, dzz, rr
+          double precision :: unflagged_max, unflagged_mean
+          integer :: n_unf
+          open(newunit=dump_unit, file='kamd_diag_vel_all.txt', status='replace', action='write')
+          write(dump_unit,'(a)') '# atom flagged cpu_vx cpu_vy cpu_vz gpu_vx gpu_vy gpu_vz'
+          unflagged_max = 0.0d0
+          unflagged_mean = 0.0d0
+          n_unf = 0
+          diag_nunflagged = 0
+          do diag_i = 1, atm_cnt
+            if (tmp_record(diag_i) == 0) then
+              diag_nunflagged = diag_nunflagged + 1
+              dxx = tmp_vel(1,diag_i) - cpu_vel_expected(1,diag_i)
+              dyy = tmp_vel(2,diag_i) - cpu_vel_expected(2,diag_i)
+              dzz = tmp_vel(3,diag_i) - cpu_vel_expected(3,diag_i)
+              rr = sqrt(dxx*dxx+dyy*dyy+dzz*dzz)
+              if (rr /= 0.0d0) then
+                n_unf = n_unf + 1
+                unflagged_mean = unflagged_mean + rr
+                if (rr > unflagged_max) unflagged_max = rr
+              end if
+            end if
+          end do
+          close(dump_unit)
+          if (diag_nunflagged > 0) unflagged_mean = unflagged_mean / diag_nunflagged
+          write(mdout,'(a,i0,a,i0)')  ' KAMD-DIAG: unflagged=', diag_nunflagged, '  unflagged-vel-differing=', n_unf
+          write(mdout,'(a,es12.5,a,es12.5)') ' KAMD-DIAG: unflagged max vel diff=', unflagged_max, &
+                                            '  mean vel diff=', unflagged_mean
+        end block
+      end block
+
+      open(newunit=diag_unit_gpu, file='kamd_diag_gpu.txt', status='replace', action='write')
+      write(diag_unit_gpu,'(a)') '# atom_index(1-based) pRecord packed_group packed_r2_f32(decoded)'
+      do diag_i = 1, atm_cnt
+        if (gpu_record_buf(diag_i) /= 0 .or. gpu_group_buf(diag_i) /= 0) then
+          write(diag_unit_gpu,'(i10,1x,i4,1x,i4,1x,es23.16)') &
+              diag_i, gpu_record_buf(diag_i), gpu_group_buf(diag_i), gpu_r2_buf(diag_i)
+        end if
+      end do
+      close(diag_unit_gpu)
+
+      write(mdout,'(a)') ' KAMD-DIAG: wrote kamd_diag_cpu.txt and kamd_diag_gpu.txt'
+      write(mdout,'(a)') ' KAMD-DIAG: exiting cleanly'
+      call mexit(6, 0)
+    end if
+  end block
+
+  ! Step 4: Single GPU call does everything:
+  !   - First-shell detection using cell decomposition (no crd download)
+  !   - Velocity redirection with half-step force correction (no vel download/upload)
+  call gpu_kamd_pseudobd_reset(random_direction, kamd_ngroups, half_dtx)
+
+  do kamd_g = 1, kamd_ngroups
+    write(mdout,'(a,i0,a,i10)') ' KAMD: velocity reset, group ', kamd_g, &
+        ', step ', total_nstep + 1
+  end do
+
+  reset_velocities = .true.
+
+end if
+! Only report the area safety gate. The ordinary relaxation interval also
+! defers a reset, but is expected between consecutive shell resets.
+if (kamd_shell_mode == 1 .and. kamd_shell_area_floor > 0.0d0 .and. &
+    kamd_shell_area < kamd_shell_area_floor * kamd_shell_initial_area .and. &
+    sum(tmp_count(1:kamd_ngroups)) .eq. nzero_crossings * kamd_ngroups) then
+  if (.not. kamd_shell_gate_logged) then
+    write(mdout,'(a,i0,a,f8.4,a,f8.4)') ' KAMD shell: reset blocked by area floor at step ', &
+      total_nstep + 1, ', area ratio=', kamd_shell_area / kamd_shell_initial_area, &
+      ', floor=', kamd_shell_area_floor
+    kamd_shell_gate_logged = .true.
+  end if
+end if
+end if
+#endif
+
+! ===== KAMD ion-trajectory output (independent of pseudobd_cycles) =====
+#ifdef CUDA
+  if (ion_traj_outfreq > 0) then
+    block
+      integer :: kamd_i, kamd_a, kamd_res
+
+      ! ---- One-time setup: upload ion list, open file, write header + roster ----
+      if (total_nstep .eq. 0) then
+        call gpu_kamd_ion_setup(kamd_ion_atoms, kamd_nions)
+
+        open(newunit=kamd_ion_traj_unit, file=trim(ion_traj_file), &
+             status='replace', action='write')
+        kamd_ion_traj_open = .true.
+
+        write(kamd_ion_traj_unit, '(a)') '# kamd ion trajectory'
+        write(kamd_ion_traj_unit, '(a,i0,a,f8.5,a,i0,a)') &
+            '# membrane_axis = ', membrane_axis, '   dt = ', dt, &
+            ' ps   ion_traj_outfreq = ', ion_traj_outfreq, ' steps'
+        write(kamd_ion_traj_unit, '(a)') &
+            '# per frame: 1 FRAME line (step, time_ps, memCOM_x memCOM_y memCOM_z, Lx Ly Lz)'
+        write(kamd_ion_traj_unit, '(a)') &
+            '#          + N ion lines (atom_index atom_name x y z , Angstrom, UNWRAPPED image coords)'
+        write(kamd_ion_traj_unit, '(a)') '# ion roster: index atom_name residue charge(e)'
+        do kamd_i = 1, kamd_nions
+          kamd_a = kamd_ion_atoms(kamd_i)
+          kamd_res = 1
+          do while (kamd_res .lt. nres .and. kamd_a .ge. gbl_res_atms(kamd_res + 1))
+            kamd_res = kamd_res + 1
+          end do
+          write(kamd_ion_traj_unit, '(a,i10,1x,a4,1x,a4,1x,f8.4)') '#   ', &
+              kamd_a, atm_igraph(kamd_a), gbl_labres(kamd_res), &
+              atm_qterm(kamd_a) * ONE_AMBER_ELECTROSTATIC
+        end do
+      end if
+
+      ! ---- Per-cadence frame write ----
+      if (mod(total_nstep + 1, ion_traj_outfreq) .eq. 0) then
+        call gpu_kamd_ion_gather(kamd_ion_xyz, kamd_com, &
+                                 kamd_membrane_start, kamd_membrane_end)
+
+        write(kamd_ion_traj_unit, '(a,i12,1x,f12.3,3(1x,f12.4),3(1x,f9.3))') &
+            'FRAME ', total_nstep + 1, t, kamd_com(1), kamd_com(2), kamd_com(3), &
+            pbc_box(1), pbc_box(2), pbc_box(3)
+        do kamd_i = 1, kamd_nions
+          write(kamd_ion_traj_unit, '(i10,1x,a4,3(1x,f10.3))') &
+              kamd_ion_atoms(kamd_i), atm_igraph(kamd_ion_atoms(kamd_i)), &
+              kamd_ion_xyz(1, kamd_i), kamd_ion_xyz(2, kamd_i), kamd_ion_xyz(3, kamd_i)
+        end do
+        flush(kamd_ion_traj_unit)
+      end if
+
+      ! ---- Close on normal completion (flush each frame protects against walltime kill) ----
+      if (kamd_ion_traj_open .and. (total_nstep + 1) .ge. total_nstlim) then
+        close(kamd_ion_traj_unit)
+        kamd_ion_traj_open = .false.
+      end if
+
+    end block
+  end if
+#endif
+
+

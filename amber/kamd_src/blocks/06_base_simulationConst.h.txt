@@ -1,0 +1,15 @@
+
+  // KAMD first-shell detection results
+  int*            pKAMDRecord;             // Per-atom: closest reference group (0=none, 1..ngroups=group, -1=surface)
+  unsigned long long* pKAMDPacked;         // Per-atom: (float-bits(dist^2) << 32) | group, atomicMin'd
+  int*            pKAMDRegionType;         // Per-group: 1=solution, 2=transmembrane (1-based: pKAMDRegionType[g-1])
+  // KAMD bath ranges and cutoffs (1-based atom indices stored as 0-based in cSim).
+  int             KAMDSolventStart;        // 0-based first solvent atom; -1 if KAMD inactive
+  int             KAMDSolventEnd;          // 0-based last solvent atom (inclusive)
+  int             KAMDMembraneStart;       // 0-based first membrane atom; -1 if no TM regions
+  int             KAMDMembraneEnd;         // 0-based last membrane atom (inclusive)
+  int             KAMDMembraneAxis;        // 1=x, 2=y, 3=z (0 if no TM regions)
+  float           KAMDShellCut2;           // (Å)^2 — solution first-shell assignment cutoff
+  float           KAMDSurfaceCut2;         // (Å)^2 — solution surface ref-atom marking cutoff
+  float           KAMDMembraneCut2;        // (Å)^2 — TM first-shell + surface marking cutoff (single value)
+

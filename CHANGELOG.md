@@ -4,7 +4,8 @@
 
 First public release.
 
-* **amber/**: KAMD in pmemd.cuda for Amber 26.
+* **amber/**: KAMD in pmemd.cuda for Amber 26, added to an Amber source tree by `kamd_install.py`
+  (dry-run check, install, uninstall; no Amber source is distributed).
   * mask-based reference groups;
   * `refer_link`;
   * solution and transmembrane regions;

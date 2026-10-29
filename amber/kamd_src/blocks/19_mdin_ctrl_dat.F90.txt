@@ -1,0 +1,30 @@
+  ! ===== KAMD inputs and resolved state =====
+  ! pseudobd_cycles, nzero_crossings, refer_link live in the int common block.
+  ! shell_cut, surface_cut live in the double common block.
+  ! Mask strings, the active-group count and resolved atom-index lists live here.
+  character(1024),  public :: refer_mask(KAMD_MAX_GROUPS)     ! per-group atom masks
+  character(1024),  public :: solvent_mask                    ! solvent atom mask (must resolve to a contiguous range)
+  character(1024),  public :: membrane_mask                   ! membrane atom mask (required if any region_type==2)
+
+  ! Resolved at master_setup time from the masks above (not user-settable).
+  integer,                            public :: kamd_ngroups          ! count of non-empty refer_mask entries
+  integer,                            public :: kamd_total_ref_atoms  ! sum of resolved per-group atom counts
+  integer, allocatable, dimension(:), public :: kamd_refer_count      ! per group
+  integer, allocatable, dimension(:), public :: kamd_refer_offset     ! per group, into kamd_refer_atoms (0-based offsets)
+  integer, allocatable, dimension(:), public :: kamd_refer_atoms      ! flat 1-based atom-index list
+  integer, allocatable, dimension(:), public :: kamd_refer_groups     ! parallel to kamd_refer_atoms; group number 1..ngroups
+  integer,                            public :: kamd_solvent_start    ! 1-based contiguous range
+  integer,                            public :: kamd_solvent_end
+  integer,                            public :: kamd_membrane_start   ! 1-based contiguous range; 0 if no TM regions
+  integer,                            public :: kamd_membrane_end
+
+  ! ===== KAMD ion-trajectory output (independent of pseudobd_cycles) =====
+  character(1024),  public :: ion_mask           ! AmberMask selecting ion atoms (required if ion_traj_outfreq>0)
+  character(256),   public :: ion_traj_file      ! output filename
+  integer,                            public :: kamd_nions          ! count of resolved ion atoms
+  integer, allocatable, dimension(:), public :: kamd_ion_atoms      ! 1-based ion atom indices
+  double precision, allocatable, dimension(:,:), public :: kamd_ion_xyz  ! per-step scratch (3, kamd_nions)
+  double precision, dimension(3),     public :: kamd_com            ! per-step membrane COM (host)
+  integer,                            public :: kamd_ion_traj_unit  ! Fortran file unit (open file)
+  logical,                            public :: kamd_ion_traj_open  ! file currently open
+

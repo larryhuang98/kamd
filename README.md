@@ -18,7 +18,7 @@ input names and defaults:
 
 | folder | engine | form | GPU | status |
 |---|---|---|---|---|
-| [`amber/`](amber/) | Amber 26 `pmemd.cuda` | patch to the pmemd source | all KAMD work on the GPU, ~0.4 % overhead | reference implementation; production use |
+| [`amber/`](amber/) | Amber 26 `pmemd.cuda` | installer program that adds KAMD to the pmemd source | all KAMD work on the GPU, ~0.4 % overhead | reference implementation; production use |
 | [`gromacs/`](gromacs/) | GROMACS 2026.4 `gmx mdrun` | patch to the GROMACS source | CPU + GPU update supported, ~0.2 % overhead | validated against Amber |
 | [`openmm/`](openmm/) | OpenMM ≥ 8.2 | Python package (`pip install`) | resets on the host, ~4 % overhead | validated against Amber |
 
@@ -67,7 +67,7 @@ Each folder carries the license of the engine it modifies or builds on:
 
 * `gromacs/`: **LGPL-2.1-or-later**, the license of GROMACS.
 * `openmm/`: **MIT**.
-* `amber/`: the KAMD changes to pmemd are made available under the same terms as the Amber pmemd source they
-  patch. The patch only works with a licensed Amber source distribution.
+* `amber/`: the KAMD code and installer are made available under the same terms as the Amber pmemd source they
+  modify. They only work with a licensed Amber source distribution, which this repository does not contain.
 
 See [`LICENSE.md`](LICENSE.md).

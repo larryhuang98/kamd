@@ -1,0 +1,3 @@
+  if (pseudobd_cycles .gt. 0 .or. ion_traj_outfreq .gt. 0) call resolve_kamd_masks(natom, nres, atm_igraph, atm_isymbl, &
+                                          gbl_res_atms, gbl_labres, atm_crd)
+

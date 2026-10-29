@@ -1,0 +1,32 @@
+! KAMD defaults (must precede &kamd namelist read)
+  pseudobd_cycles    = 0                     ! 0 disables KAMD entirely
+  nzero_crossings    = 2
+  shell_cut          = 5.0d0                 ! Å, solution first-shell
+  surface_cut        = 3.0d0                 ! Å, solution surface marking
+  membrane_cut       = 3.0d0                 ! Å, single TM cutoff (first-shell + surface)
+  kamd_shell_mode        = 0                 ! legacy KAMD unless explicitly enabled
+  kamd_shell_relax_steps = 0                 ! minimum steps between resets in shell mode
+  kamd_shell_max_angle   = 45.0d0           ! degrees, max lipid COM turn per reset
+  kamd_shell_area_floor  = 0.0d0            ! optional area ratio safety gate (0=off)
+  kamd_shell_area_reference = 0.0d0         ! 0=start-of-run, otherwise fixed area across restarts
+  membrane_axis      = 0                     ! 1/2/3 = x/y/z; required if any region_type==2
+  refer_link(:)      = 0
+  region_type(:)     = KAMD_RT_SOLUTION      ! default all groups to solution
+  refer_mask(:)      = ''
+  solvent_mask       = ''
+  membrane_mask      = ''
+  kamd_ngroups       = 0
+  kamd_total_ref_atoms = 0
+  kamd_solvent_start = 0
+  kamd_solvent_end   = 0
+  kamd_membrane_start = 0
+  kamd_membrane_end   = 0
+
+! KAMD ion-trajectory defaults
+  ion_traj_outfreq   = 0
+  ion_mask           = ''
+  ion_traj_file      = 'kamd_ions.dat'
+  kamd_nions         = 0
+  kamd_ion_traj_unit = -1
+  kamd_ion_traj_open = .false.
+

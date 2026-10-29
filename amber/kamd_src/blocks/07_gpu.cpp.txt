@@ -1,0 +1,293 @@
+// gpu_kamd_download_record_: download the KAMD first-shell detection results for debugging.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_download_record_(int* result_record, int* natoms)
+{
+  if (gpu->pbKAMDRecord != NULL) {
+    gpu->pbKAMDRecord->Download();
+    int n = min(*natoms, gpu->sim.atoms);
+    for (int i = 0; i < n; i++) {
+      result_record[i] = gpu->pbKAMDRecord->_pSysData[i];
+    }
+  }
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_download_packed_: download the packed (dist^2_float, group) words for debugging.
+//   The upper 32 bits of each word are the IEEE bit pattern of the stored float r^2, and the
+//   lower 32 bits are the group number.  Returns r^2 as a double (decoded from the float bits)
+//   and the group in two parallel arrays.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_download_packed_(double* r2_out, int* group_out, int* natoms)
+{
+  if (gpu->pbKAMDPacked != NULL) {
+    gpu->pbKAMDPacked->Download();
+    int n = min(*natoms, gpu->sim.atoms);
+    for (int i = 0; i < n; i++) {
+      unsigned long long w = gpu->pbKAMDPacked->_pSysData[i];
+      unsigned int hi      = (unsigned int)(w >> 32);
+      unsigned int lo      = (unsigned int)(w & 0xFFFFFFFFu);
+      float r2f;
+      memcpy(&r2f, &hi, sizeof(r2f));
+      r2_out[i]    = (double)r2f;
+      group_out[i] = (int)lo;
+    }
+  }
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_setup_: one-time initialization of all KAMD GPU buffers and constant data.
+//   Called once at simulation start when pseudoBD_cycles > 0.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
+                                 int* total_ref_atoms,
+                                 int* region_type,
+                                 int* solvent_start, int* solvent_end,
+                                 int* membrane_start, int* membrane_end,
+                                 int* membrane_axis,
+                                 double* shell_cut, double* surface_cut,
+                                 double* membrane_cut,
+                                 int* ngroups,
+                                 int* residue_starts, int* nres,
+                                 int* shell_mode, double* shell_max_angle)
+{
+  PRINTMETHOD("gpu_kamd_setup");
+  int natoms        = gpu->sim.atoms;
+  int totalRefAtoms = *total_ref_atoms;
+  int ng            = *ngroups;
+  int dirBufLen     = ng * 3;
+
+  // Allocate all KAMD buffers.  Per-group buffers are sized to the active
+  // group count; per-atom buffers cover the full system.
+  gpu->pbKAMDRecord      = new GpuBuffer<int>(natoms);
+  gpu->pbKAMDPacked      = new GpuBuffer<unsigned long long>(natoms);
+  gpu->pbKAMDRandomDir   = new GpuBuffer<double>(dirBufLen);
+  gpu->pbKAMDRefGroupMap = new GpuBuffer<int>(natoms);
+  gpu->pbKAMDMomenta     = new GpuBuffer<double>(dirBufLen);
+  gpu->pbKAMDRefAtomInfo = new GpuBuffer<int2>(max(totalRefAtoms, 1));
+  gpu->pbKAMDRegionType  = new GpuBuffer<int>(ng);
+  gpu->kamdShellMode = *shell_mode;
+  gpu->kamdShellMaxAngle = *shell_max_angle * 3.14159265358979323846 / 180.0;
+  gpu->sim.pKAMDRecord       = gpu->pbKAMDRecord->_pDevData;
+  gpu->sim.pKAMDPacked       = gpu->pbKAMDPacked->_pDevData;
+  gpu->sim.pKAMDRegionType   = gpu->pbKAMDRegionType->_pDevData;
+
+  // Build reference atom info array directly from the resolved (atom, group)
+  // lists provided by the Fortran side.  Atom indices arrive 1-based; convert
+  // to the 0-based form expected by the GPU kernels.
+  for (int i = 0; i < totalRefAtoms; i++) {
+    gpu->pbKAMDRefAtomInfo->_pSysData[i].x = refer_atoms[i]  - 1;
+    gpu->pbKAMDRefAtomInfo->_pSysData[i].y = refer_groups[i];
+  }
+  gpu->pbKAMDRefAtomInfo->Upload();
+
+  // Build per-atom group map (0 = not a ref atom; 1..ngroups = group number).
+  memset(gpu->pbKAMDRefGroupMap->_pSysData, 0, natoms * sizeof(int));
+  for (int i = 0; i < totalRefAtoms; i++) {
+    gpu->pbKAMDRefGroupMap->_pSysData[refer_atoms[i] - 1] = refer_groups[i];
+  }
+  gpu->pbKAMDRefGroupMap->Upload();
+
+  // Per-group region type: pKAMDRegionType[g-1] = 1 (solution) or 2 (TM).
+  for (int g = 0; g < ng; g++) {
+    gpu->pbKAMDRegionType->_pSysData[g] = region_type[g];
+  }
+  gpu->pbKAMDRegionType->Upload();
+
+  if (gpu->kamdShellMode && *membrane_start > 0) {
+    const int start = *membrane_start - 1;
+    const int end = *membrane_end - 1;
+    int count = 0;
+    for (int r = 0; r < *nres; r++) {
+      int first = residue_starts[r] - 1;
+      int last = (r + 1 < *nres ? residue_starts[r+1] - 2 : natoms - 1);
+      if (last < start || first > end) continue;
+      if (first < start || last > end) {
+        fprintf(stderr, "KAMD shell: membrane_mask must contain complete lipid residues\n");
+        exit(1);
+      }
+      count++;
+    }
+    gpu->nKAMDMembraneMol = count;
+    gpu->pbKAMDMembraneMol = new GpuBuffer<int2>(max(count, 1));
+    gpu->pbKAMDMembraneOwner = new GpuBuffer<int>(max(count, 1));
+    gpu->pbKAMDMembraneImpulse = new GpuBuffer<double>(5);
+    int m = 0;
+    for (int r = 0; r < *nres; r++) {
+      int first = residue_starts[r] - 1;
+      int last = (r + 1 < *nres ? residue_starts[r+1] - 2 : natoms - 1);
+      if (first < start || last > end) continue;
+      gpu->pbKAMDMembraneMol->_pSysData[m].x = first;
+      gpu->pbKAMDMembraneMol->_pSysData[m].y = last;
+      gpu->pbKAMDMembraneOwner->_pSysData[m] = 0;
+      m++;
+    }
+    gpu->pbKAMDMembraneMol->Upload();
+    gpu->pbKAMDMembraneOwner->Upload();
+    fprintf(stdout, "KAMD shell: %d complete membrane residues\n", count);
+  }
+
+  // Stash bath ranges (converted to 0-based), membrane axis, and squared cutoffs
+  // in cSim so kernels can read them as constants.  KAMDMembrane* are -1/0 if
+  // no transmembrane regions are active.
+  gpu->sim.KAMDSolventStart   = *solvent_start - 1;
+  gpu->sim.KAMDSolventEnd     = *solvent_end   - 1;
+  if (*membrane_start > 0) {
+    gpu->sim.KAMDMembraneStart = *membrane_start - 1;
+    gpu->sim.KAMDMembraneEnd   = *membrane_end   - 1;
+  } else {
+    gpu->sim.KAMDMembraneStart = -1;
+    gpu->sim.KAMDMembraneEnd   = -1;
+  }
+  gpu->sim.KAMDMembraneAxis = *membrane_axis;
+  gpu->sim.KAMDShellCut2    = (float)((*shell_cut)   * (*shell_cut));
+  gpu->sim.KAMDSurfaceCut2  = (float)((*surface_cut) * (*surface_cut));
+  gpu->sim.KAMDMembraneCut2 = (float)((*membrane_cut)* (*membrane_cut));
+
+  gpuCopyConstants();
+  gpu->bKAMDSetupDone = true;
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_compute_momenta_: compute reference-group momenta on GPU.
+//   The current host-side monitor path downloads a fixed 18 doubles
+//   (first six groups * 3 xyz) instead of all velocities.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_compute_momenta_(double* momenta)
+{
+  PRINTMETHOD("gpu_kamd_compute_momenta");
+
+  // Count ref atoms from the already-uploaded info
+  int totalRefAtoms = gpu->pbKAMDRefAtomInfo->_length;
+
+  kKAMD_ComputeMomenta(gpu, totalRefAtoms);
+  cudaDeviceSynchronize();
+
+  // Download monitor buffer (ngroups * 3 doubles).
+  gpu->pbKAMDMomenta->Download();
+  int nMomenta = gpu->pbKAMDMomenta->_length;
+  for (int i = 0; i < nMomenta; i++) {
+    momenta[i] = gpu->pbKAMDMomenta->_pSysData[i];
+  }
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_pseudobd_reset_: all-GPU pseudo-Brownian dynamics velocity reset for KAMD.
+//   1. First-shell detection using cell decomposition (no coordinate download)
+//   2. Velocity redirection on GPU (no vel download/upload round trip)
+//   Called from runmd.F90 after gpu_vrand_reset_velocities.
+//
+// Arguments:
+//   random_direction:  ngroups*3 doubles of random direction vectors.  For TM
+//                      groups the Fortran caller has already projected out the
+//                      membrane-axis component; we just renormalize defensively.
+//   ngroups:           number of active reference groups
+//   half_dtx:          half of the scaled timestep
+//
+// Bath ranges, region types, and cutoffs are constant for the run and live in
+// cSim from gpu_kamd_setup_.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_pseudobd_reset_(double* random_direction,
+                                          int* ngroups, double* half_dtx)
+{
+  PRINTMETHOD("gpu_kamd_pseudobd_reset");
+
+  int totalRefAtoms = gpu->pbKAMDRefAtomInfo->_length;
+  int ng            = *ngroups;
+
+  // --- Normalize and upload random direction vectors (transfer: ngroups*24 bytes) ---
+  for (int g = 0; g < ng; g++) {
+    double dx = random_direction[g * 3 + 0];
+    double dy = random_direction[g * 3 + 1];
+    double dz = random_direction[g * 3 + 2];
+    double norm = sqrt(dx * dx + dy * dy + dz * dz);
+    if (norm > 1.0e-10) {
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 0] = dx / norm;
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 1] = dy / norm;
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 2] = dz / norm;
+    } else {
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 0] = 1.0;
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 1] = 0.0;
+      gpu->pbKAMDRandomDir->_pSysData[g * 3 + 2] = 0.0;
+    }
+  }
+  gpu->pbKAMDRandomDir->Upload();
+
+  // --- Step 1: First-shell detection on GPU (bath ranges/cutoffs read from cSim) ---
+  kKAMD_FindFirstShell(gpu, totalRefAtoms);
+
+  // --- Step 2: Velocity redirection on GPU ---
+  kKAMD_RedirectVelocities(gpu,
+                            gpu->pbKAMDRandomDir->_pDevData,
+                            gpu->pbKAMDRefGroupMap->_pDevData,
+                            *half_dtx);
+  kKAMD_RedirectMembraneMolecules(gpu,
+                                  gpu->pbKAMDRandomDir->_pDevData,
+                                  *half_dtx);
+
+  cudaDeviceSynchronize();
+  if (gpu->kamdShellMode && gpu->pbKAMDMembraneImpulse != NULL) {
+    static unsigned long shellResetCount = 0;
+    shellResetCount++;
+    if (shellResetCount <= 10 || shellResetCount % 100 == 0) {
+      gpu->pbKAMDMembraneImpulse->Download();
+      const double* p = gpu->pbKAMDMembraneImpulse->_pSysData;
+      const double mass = p[3];
+      if (mass > 0.0) {
+        fprintf(stdout, "KAMD shell balance reset %lu: molecules=%.0f dv=(%.6g,%.6g,%.6g)\n",
+                shellResetCount, p[4], p[0]/mass, p[1]/mass, p[2]/mass);
+      }
+    }
+  }
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_ion_setup_: one-time allocation + upload of the ion index list.
+//   ion indices arrive 1-based and are stored 0-based for the GPU.
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_ion_setup_(int* ion_atoms, int* nions)
+{
+  PRINTMETHOD("gpu_kamd_ion_setup");
+  int nIons = *nions;
+  gpu->pbKAMDIons      = new GpuBuffer<int>(max(nIons, 1));
+  gpu->pbKAMDIonCrd    = new GpuBuffer<double>(max(3 * nIons, 1));
+  gpu->pbKAMDIonCOMacc = new GpuBuffer<double>(4);
+  for (int i = 0; i < nIons; i++) {
+    gpu->pbKAMDIons->_pSysData[i] = ion_atoms[i] - 1;   // 1-based -> 0-based
+  }
+  gpu->pbKAMDIons->Upload();
+}
+
+//---------------------------------------------------------------------------------------------
+// gpu_kamd_ion_gather_: gather ion xyz + membrane COM on GPU, download to host.
+//   ion_xyz: caller buffer length 3*nIons (row-major: [ion*3 + xyz]).
+//   com:     caller buffer length 3 (mass-weighted membrane COM, Angstrom).
+//   membrane_start/end: 1-based inclusive range (same convention as gpu_kamd_setup_).
+//---------------------------------------------------------------------------------------------
+extern "C" void gpu_kamd_ion_gather_(double* ion_xyz, double* com,
+                                      int* membrane_start, int* membrane_end)
+{
+  PRINTMETHOD("gpu_kamd_ion_gather");
+  int nIons = gpu->pbKAMDIons->_length;
+
+  cudaMemsetAsync(gpu->pbKAMDIonCOMacc->_pDevData, 0, 4 * sizeof(double));
+  LAUNCHERROR("kKAMD_MemCOM_zero");
+
+  kKAMD_GatherIons(gpu, nIons);
+  kKAMD_MemCOM(gpu, *membrane_start - 1, *membrane_end - 1);
+  cudaDeviceSynchronize();
+
+  gpu->pbKAMDIonCrd->Download();
+  for (int i = 0; i < 3 * nIons; i++) ion_xyz[i] = gpu->pbKAMDIonCrd->_pSysData[i];
+
+  gpu->pbKAMDIonCOMacc->Download();
+  double mtot = gpu->pbKAMDIonCOMacc->_pSysData[3];
+  if (fabs(mtot) > 0.0) {
+    com[0] = gpu->pbKAMDIonCOMacc->_pSysData[0] / mtot;
+    com[1] = gpu->pbKAMDIonCOMacc->_pSysData[1] / mtot;
+    com[2] = gpu->pbKAMDIonCOMacc->_pSysData[2] / mtot;
+  } else {
+    com[0] = com[1] = com[2] = 0.0;
+  }
+}
+
+//---------------------------------------------------------------------------------------------

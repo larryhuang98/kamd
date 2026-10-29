@@ -1,0 +1,3 @@
+                                vel_scale_t, &
+                                shell_cut, surface_cut, membrane_cut, & ! KAMD cutoffs (Å)
+                                kamd_shell_max_angle, kamd_shell_area_floor, kamd_shell_area_reference, &

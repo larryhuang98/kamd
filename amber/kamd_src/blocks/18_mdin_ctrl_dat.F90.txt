@@ -1,0 +1,1 @@
+  integer, parameter    :: mdin_ctrl_dbl_cnt = 20213

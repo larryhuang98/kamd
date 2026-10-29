@@ -1,0 +1,10 @@
+  delete pbKAMDRecord;
+  delete pbKAMDPacked;
+  delete pbKAMDRefAtomInfo;
+  delete pbKAMDRandomDir;
+  delete pbKAMDRefGroupMap;
+  delete pbKAMDMomenta;
+  delete pbKAMDRegionType;
+  delete pbKAMDMembraneMol;
+  delete pbKAMDMembraneOwner;
+  delete pbKAMDMembraneImpulse;

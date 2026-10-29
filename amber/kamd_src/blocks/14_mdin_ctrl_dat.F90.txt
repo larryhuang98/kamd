@@ -1,0 +1,4 @@
+             ipgm, ivdwopt, & ! 186 (PGM and alternative VDW)
+             pseudobd_cycles, nzero_crossings, membrane_axis, & ! KAMD scalars: 189
+             ion_traj_outfreq, kamd_shell_mode, kamd_shell_relax_steps, & ! KAMD membrane shell
+             refer_link, region_type ! KAMD per-group: 189 + 2*KAMD_MAX_GROUPS

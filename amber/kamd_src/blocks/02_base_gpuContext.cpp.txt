@@ -1,0 +1,8 @@
+  pbNLbSkinTestFail(NULL), pbNLCellHash(NULL),
+  pbKAMDRecord(NULL), pbKAMDPacked(NULL), pbKAMDRefAtomInfo(NULL),
+  pbKAMDRandomDir(NULL), pbKAMDRefGroupMap(NULL), pbKAMDMomenta(NULL),
+  pbKAMDRegionType(NULL), pbKAMDMembraneMol(NULL), pbKAMDMembraneOwner(NULL),
+  pbKAMDMembraneImpulse(NULL),
+  nKAMDMembraneMol(0), kamdShellMode(0), kamdShellMaxAngle(0.0),
+  bKAMDSetupDone(false),
+  pbNLRecord(NULL), pbNLEntry(NULL),
