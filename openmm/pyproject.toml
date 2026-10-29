@@ -9,7 +9,12 @@ description = "Kinetic Accelerated Molecular Dynamics (KAMD) for OpenMM"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "Zhen Huang" }, { name = "Haixin Wei" }, { name = "Ray Luo" }]
+authors = [
+  { name = "Zhen Huang" },
+  { name = "Yong Duan" },
+  { name = "Ray Luo" },
+  { name = "Haixin Wei" },
+]
 dependencies = ["numpy", "scipy", "openmm>=8.2"]
 
 

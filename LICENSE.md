@@ -8,4 +8,4 @@ This repository bundles three implementations of KAMD. Each one is licensed to m
 | `gromacs/` | GNU LGPL v2.1 or later (see `gromacs/COPYING`) | the patch creates a derivative work of GROMACS |
 | `amber/` | terms of the Amber pmemd source license | the patch modifies pmemd, which is distributed under the Amber license |
 
-Copyright © 2025-2026 Zhen Huang, Haixin Wei, Ray Luo, University of California, Irvine.
+Copyright © 2025-2026 Zhen Huang, Yong Duan, Ray Luo, Haixin Wei, University of California.

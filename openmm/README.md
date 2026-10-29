@@ -2,8 +2,8 @@
 
 KAMD (Kinetic Accelerated Molecular Dynamics) for [OpenMM](https://openmm.org).
 
-This is a port of the pmemd.cuda KAMD implementation by Zhen Huang, Haixin Wei
-and Ray Luo (UC Irvine). Method paper: H. Wei *et al.*, bioRxiv 2025,
+This is a port of the pmemd.cuda KAMD implementation by Zhen Huang, Yong Duan,
+Ray Luo and Haixin Wei. Method paper: H. Wei *et al.*, bioRxiv 2025,
 doi:10.1101/2025.06.14.659665.
 
 KAMD speeds up conformational sampling without changing the potential and without

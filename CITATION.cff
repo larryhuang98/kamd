@@ -10,13 +10,16 @@ authors:
   - family-names: Huang
     given-names: Zhen
     affiliation: University of California, Irvine
-  - family-names: Wei
-    given-names: Haixin
-    affiliation: University of California, Irvine
+  - family-names: Duan
+    given-names: Yong
+    affiliation: University of California, Davis
   - family-names: Luo
     given-names: Ray
     affiliation: University of California, Irvine
     email: rluo@uci.edu
+  - family-names: Wei
+    given-names: Haixin
+    affiliation: University of California, Irvine
 keywords:
   - molecular dynamics
   - enhanced sampling
