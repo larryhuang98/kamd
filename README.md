@@ -11,7 +11,7 @@ times, KAMD performs a pseudo-Brownian reset:
 * the first-shell solvent (or membrane) atoms and the surface atoms of each group
   are turned onto one random direction per group, each atom keeping its speed.
 
-Method: H. Wei *et al.*, bioRxiv 2025, [doi:10.1101/2025.06.14.659665](https://doi.org/10.1101/2025.06.14.659665).
+Method: H. Wei, *J. Chem. Inf. Model.* **66**, 4116–4129 (2026), [doi:10.1021/acs.jcim.5c03093](https://doi.org/10.1021/acs.jcim.5c03093).
 
 This repository contains three implementations that share the same algorithm,
 input names and defaults:
@@ -59,7 +59,21 @@ Details and scripts are in `openmm/validation/` and `gromacs/validation/`.
 
 ## Citing
 
-If you use KAMD, please cite the method paper and this software (see [`CITATION.cff`](CITATION.cff)).
+If you use KAMD, please cite the method paper and this software (see [`CITATION.cff`](CITATION.cff); the
+"Cite this repository" button on GitHub gives APA and BibTeX):
+
+```bibtex
+@article{Wei2026KAMD,
+  author  = {Wei, Haixin},
+  title   = {Enhanced Sampling on Domain/Motif Level with Kinetic Accelerated Molecular Dynamics},
+  journal = {Journal of Chemical Information and Modeling},
+  volume  = {66},
+  number  = {7},
+  pages   = {4116--4129},
+  year    = {2026},
+  doi     = {10.1021/acs.jcim.5c03093}
+}
+```
 
 ## Licenses
 

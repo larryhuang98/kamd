@@ -32,7 +32,11 @@ preferred-citation:
   authors:
     - family-names: Wei
       given-names: Haixin
-  journal: bioRxiv
-  url: "https://doi.org/10.1101/2025.06.14.659665"
-  year: 2025
-  doi: 10.1101/2025.06.14.659665
+  journal: "Journal of Chemical Information and Modeling"
+  volume: 66
+  issue: 7
+  start: 4116
+  end: 4129
+  year: 2026
+  doi: 10.1021/acs.jcim.5c03093
+  url: "https://doi.org/10.1021/acs.jcim.5c03093"
