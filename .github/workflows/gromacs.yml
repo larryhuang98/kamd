@@ -1,5 +1,6 @@
 name: gromacs
 on:
+  workflow_dispatch:
   push:
     paths: ["gromacs/**", ".github/workflows/gromacs.yml"]
   pull_request:
