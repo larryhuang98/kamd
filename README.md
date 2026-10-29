@@ -1,4 +1,4 @@
-# KAMD — Kinetically Accelerated Molecular Dynamics
+# KAMD — Kinetic Accelerated Molecular Dynamics
 
 KAMD speeds up conformational sampling of biomolecules. It does not modify the
 potential energy surface and needs no collective variables. Every

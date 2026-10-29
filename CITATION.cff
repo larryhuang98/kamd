@@ -1,9 +1,11 @@
 cff-version: 1.2.0
 message: "If you use KAMD, please cite the method paper and this software."
-title: "KAMD: Kinetically Accelerated Molecular Dynamics for Amber, GROMACS and OpenMM"
+title: "KAMD: Kinetic Accelerated Molecular Dynamics for Amber, GROMACS and OpenMM"
 type: software
 version: 0.1.0
 date-released: 2026-10-29
+repository-code: "https://github.com/larryhuang98/kamd"
+license-url: "https://github.com/larryhuang98/kamd/blob/main/LICENSE.md"
 authors:
   - family-names: Huang
     given-names: Zhen
@@ -23,10 +25,11 @@ keywords:
   - OpenMM
 preferred-citation:
   type: article
-  title: "Kinetically Accelerated Molecular Dynamics"
+  title: "Enhanced Sampling on Domain/Motif Level with Kinetic Accelerated Molecular Dynamics"
   authors:
     - family-names: Wei
       given-names: Haixin
   journal: bioRxiv
+  url: "https://doi.org/10.1101/2025.06.14.659665"
   year: 2025
   doi: 10.1101/2025.06.14.659665

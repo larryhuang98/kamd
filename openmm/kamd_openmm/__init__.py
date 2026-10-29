@@ -1,4 +1,4 @@
-"""KAMD (Kinetically Accelerated Molecular Dynamics) for OpenMM.
+"""KAMD (Kinetic Accelerated Molecular Dynamics) for OpenMM.
 
 Port of the pmemd.cuda implementation by Z. Huang, H. Wei and R. Luo (UC Irvine).
 Method: H. Wei et al., bioRxiv 2025, doi:10.1101/2025.06.14.659665.

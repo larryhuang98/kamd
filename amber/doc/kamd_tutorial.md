@@ -1,6 +1,6 @@
 # KAMD Tutorial
 
-This is a user-facing tutorial for KAMD (Kinetically Accelerated Molecular
+This is a user-facing tutorial for KAMD (Kinetic Accelerated Molecular
 Dynamics) in pmemd.cuda.  For the algorithm and the GPU implementation
 internals, see `kamd_implementation.tex`.
 

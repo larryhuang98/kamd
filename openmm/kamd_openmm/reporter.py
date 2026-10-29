@@ -54,7 +54,7 @@ def velocity_offset_for(integrator) -> str:
 
 
 class KAMDReporter:
-    """Kinetically Accelerated MD for OpenMM.
+    """Kinetic Accelerated MD for OpenMM.
 
     Parameters
     ----------

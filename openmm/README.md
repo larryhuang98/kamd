@@ -1,6 +1,6 @@
 # kamd-openmm
 
-KAMD (Kinetically Accelerated Molecular Dynamics) for [OpenMM](https://openmm.org).
+KAMD (Kinetic Accelerated Molecular Dynamics) for [OpenMM](https://openmm.org).
 
 This is a port of the pmemd.cuda KAMD implementation by Zhen Huang, Haixin Wei
 and Ray Luo (UC Irvine). Method paper: H. Wei *et al.*, bioRxiv 2025,
@@ -53,10 +53,10 @@ pip install ./openmm             # numpy, scipy, openmm
 pip install "./openmm[amber]"    # + parmed, to read Amber &kamd inputs and masks
 ```
 
-Or directly from GitHub (replace `ORG/kamd` with the repository path):
+Or directly from GitHub:
 
 ```bash
-pip install "kamd-openmm[amber] @ git+https://github.com/ORG/kamd#subdirectory=openmm"
+pip install "kamd-openmm[amber] @ git+https://github.com/larryhuang98/kamd#subdirectory=openmm"
 ```
 
 For CUDA, install OpenMM with the CUDA wheels (`pip install "openmm[cuda12]"`) or install it from conda-forge.
