@@ -11,6 +11,8 @@ plain pmemd.cuda.
   contains only the KAMD changes.
 * **The usual Amber 26 build requirements** (CMake, a C/C++/Fortran compiler, CUDA).
   * Tested with CMake 3.31.6, GCC/gfortran 11.3.0 and CUDA 12.8 on RHEL 8, on RTX 4090 and RTX 5090 GPUs.
+  * Also compiles with CUDA 12.3 and GCC 10.2 (gfortran 11.3), where Amber builds sm_50 to sm_90; KAMD uses a
+    compare-and-swap fallback for double-precision atomic adds on GPUs older than compute capability 6.0.
   * **CUDA is required:** KAMD exists only in `pmemd.cuda` (`pmemd.cuda_SPFP` / `pmemd.cuda_DPFP`). CPU `pmemd` and
     multi-GPU `pmemd.cuda.MPI` stop with an error if an input contains `&kamd`.
 

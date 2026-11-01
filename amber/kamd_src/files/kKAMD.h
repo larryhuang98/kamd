@@ -424,6 +424,16 @@ __device__ void kKAMD_voidatomicAdd(double* ptr, double val) {
 }
 #endif
 
+// Double-precision atomic add usable in every architecture of the build (the native
+// atomicAdd(double*) needs CC >= 6.0; Amber builds sm_5x too with CUDA <= 12.x).
+__device__ static inline void kKAMD_atomicAddDouble(double* ptr, double val) {
+#if (__CUDA_ARCH__ < 600) || (__CUDACC_VER_MAJOR__ < 8)
+  kKAMD_voidatomicAdd(ptr, val);
+#else
+  atomicAdd(ptr, val);
+#endif
+}
+
 //---------------------------------------------------------------------------------------------
 // kKAMD_ComputeMomenta_kernel
 //
@@ -743,7 +753,7 @@ kKAMD_RedirectMembraneMolecules_kernel(int2* molRange, int* previousOwner,
   }
   // Include every lipid in the denominator, even when it does not contact a
   // reference group. This makes the correction a uniform membrane COM shift.
-  atomicAdd(&impulse[3], massTotal);
+  kKAMD_atomicAddDouble(&impulse[3], massTotal);
 
   int owner = 0;
   double best = 0.0;
@@ -773,9 +783,9 @@ kKAMD_RedirectMembraneMolecules_kernel(int2* molRange, int* previousOwner,
   double cs = cos(angle), sn = sin(angle);
   double deltaA = vx*cs - vy*sn - vx;
   double deltaB = vx*sn + vy*cs - vy;
-  atomicAdd(&impulse[a], massTotal * deltaA);
-  atomicAdd(&impulse[b], massTotal * deltaB);
-  atomicAdd(&impulse[4], 1.0);
+  kKAMD_atomicAddDouble(&impulse[a], massTotal * deltaA);
+  kKAMD_atomicAddDouble(&impulse[b], massTotal * deltaB);
+  kKAMD_atomicAddDouble(&impulse[4], 1.0);
   for (int orig = range.x; orig <= range.y; orig++) {
     unsigned int s = cSim.pImageAtomLookup[orig];
     if (a == 0) cSim.pImageVelX[s] += deltaA;
@@ -842,10 +852,10 @@ kKAMD_GroupCOM_kernel(int totalRefAtoms, const int2* refInfo, const int* groupFi
   double dz = cSim.pImageZ[s] - cSim.pImageZ[s0];
   kKAMD_MinImage(dx, dy, dz, isNTP);
   double m = cSim.pImageMass[s];
-  atomicAdd(&com[4*g+0], m*dx);
-  atomicAdd(&com[4*g+1], m*dy);
-  atomicAdd(&com[4*g+2], m*dz);
-  atomicAdd(&com[4*g+3], m);
+  kKAMD_atomicAddDouble(&com[4*g+0], m*dx);
+  kKAMD_atomicAddDouble(&com[4*g+1], m*dy);
+  kKAMD_atomicAddDouble(&com[4*g+2], m*dz);
+  kKAMD_atomicAddDouble(&com[4*g+3], m);
 }
 
 __global__ void
@@ -867,7 +877,7 @@ kKAMD_AlignMembraneMolecules_kernel(int2* molRange, int* previousOwner, int nMol
       score[group-1] += mass;
     massTotal += mass;
   }
-  atomicAdd(&impulse[3], massTotal);   // every lipid shares the balancing correction
+  kKAMD_atomicAddDouble(&impulse[3], massTotal);   // every lipid shares the balancing correction
 
   int owner = 0;
   double best = 0.0;
@@ -952,8 +962,8 @@ kKAMD_AlignMembraneMolecules_kernel(int2* molRange, int* previousOwner, int nMol
     cSim.pImageVelY[s] = vn[1] - fw[1];
     cSim.pImageVelZ[s] = vn[2] - fw[2];
   }
-  for (int k = 0; k < 3; k++) if (k != axis) atomicAdd(&impulse[k], dp[k]);
-  atomicAdd(&impulse[4], 1.0);
+  for (int k = 0; k < 3; k++) if (k != axis) kKAMD_atomicAddDouble(&impulse[k], dp[k]);
+  kKAMD_atomicAddDouble(&impulse[4], 1.0);
 }
 
 // Remove only the net in-plane momentum that molecular shell redirection added.
