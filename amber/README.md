@@ -77,6 +77,12 @@ The full namelist reference is in [`doc/kamd_tutorial.md`](doc/kamd_tutorial.md)
 * ion-trajectory output;
 * the experimental membrane shell mode.
 
+## Membrane proteins
+
+Use the nonbonded settings of the lipid force field (CHARMM36: `cut=12.0, fswitch=10.0` in `&cntrl`, `vdwmeth=0`
+in `&ewald`), equilibrate under NPT, run KAMD under NVT, and use `kamd_shell_mode = 2` for transmembrane groups.
+Details: [Membrane proteins](../README.md#membrane-proteins) and the [tutorial](doc/kamd_tutorial.md).
+
 ## Test
 
 `test/` holds a 29,467-atom solvated protein (`prmtop`, `restrt`) and an input with four reference groups.

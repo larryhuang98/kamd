@@ -19,7 +19,7 @@ extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
                                  double* shell_cut, double* surface_cut,
                                  double* membrane_cut,
                                  int* ngroups,
-                                 int* residue_starts, int* nres,
+                                 int* mol_starts, int* nmol,
                                  int* shell_mode, double* shell_max_angle);
 extern "C" void gpu_kamd_compute_momenta_(double* momenta);
 extern "C" void gpu_kamd_download_record_(int* result_record, int* natoms);

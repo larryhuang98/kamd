@@ -24,7 +24,7 @@ if (pseudobd_cycles > 0) then
       kamd_shell_initial_area = pbc_box(1) * pbc_box(2)
     end select
     if (kamd_shell_area_reference > 0.0d0) kamd_shell_initial_area = kamd_shell_area_reference
-    if (kamd_shell_mode == 1) then
+    if (kamd_shell_mode >= 1) then
       write(mdout,'(a,f16.4)') ' KAMD shell: reference membrane area (A^2) = ', kamd_shell_initial_area
     end if
     kamd_shell_gate_logged = .false.
@@ -36,13 +36,28 @@ if (pseudobd_cycles > 0) then
 
     ! Upload the resolved (atom, group) lists, region types, bath ranges, and
     ! cutoffs.  All of these are constants for the rest of the run.
+    ! Membrane shell modes work on whole lipid molecules. Take the molecules from the
+    ! prmtop (ATOMS_PER_MOLECULE, contiguous); a residue is not a molecule in lipid force
+    ! fields that split a lipid into head and tail residues (e.g. Amber Lipid21).
+    if (nspm > 0 .and. allocated(atm_nsp)) then
+      kamd_nmol = nspm
+      allocate(kamd_mol_starts(kamd_nmol))
+      kamd_mol_starts(1) = 1
+      do kamd_i = 2, kamd_nmol
+        kamd_mol_starts(kamd_i) = kamd_mol_starts(kamd_i-1) + atm_nsp(kamd_i-1)
+      end do
+    else
+      kamd_nmol = nres
+      allocate(kamd_mol_starts(kamd_nmol))
+      kamd_mol_starts(1:nres) = gbl_res_atms(1:nres)
+    end if
     call gpu_kamd_setup(kamd_refer_atoms, kamd_refer_groups, kamd_total_ref_atoms, &
                         region_type, &
                         kamd_solvent_start, kamd_solvent_end, &
                         kamd_membrane_start, kamd_membrane_end, &
                         membrane_axis, &
                         shell_cut, surface_cut, membrane_cut, &
-                        kamd_ngroups, gbl_res_atms, nres, &
+                        kamd_ngroups, kamd_mol_starts, kamd_nmol, &
                         kamd_shell_mode, kamd_shell_max_angle)
   end if
 
@@ -79,7 +94,7 @@ case default
   kamd_shell_area = pbc_box(1) * pbc_box(2)
 end select
 kamd_shell_ready = .true.
-if (kamd_shell_mode == 1) then
+if (kamd_shell_mode >= 1) then
   kamd_shell_ready = total_nstep + 1 - kamd_shell_last_reset >= kamd_shell_relax_steps
   if (kamd_shell_area_floor > 0.0d0) then
     kamd_shell_ready = kamd_shell_ready .and. &
@@ -386,7 +401,7 @@ if (sum(tmp_count(1:kamd_ngroups)) .eq. nzero_crossings * kamd_ngroups .and. kam
 end if
 ! Only report the area safety gate. The ordinary relaxation interval also
 ! defers a reset, but is expected between consecutive shell resets.
-if (kamd_shell_mode == 1 .and. kamd_shell_area_floor > 0.0d0 .and. &
+if (kamd_shell_mode >= 1 .and. kamd_shell_area_floor > 0.0d0 .and. &
     kamd_shell_area < kamd_shell_area_floor * kamd_shell_initial_area .and. &
     sum(tmp_count(1:kamd_ngroups)) .eq. nzero_crossings * kamd_ngroups) then
   if (.not. kamd_shell_gate_logged) then

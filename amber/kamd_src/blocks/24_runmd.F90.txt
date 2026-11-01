@@ -14,4 +14,6 @@
   integer               :: kamd_shell_last_reset
   double precision      :: kamd_shell_initial_area, kamd_shell_area
   logical               :: kamd_shell_ready, kamd_shell_gate_logged
+  integer, allocatable  :: kamd_mol_starts(:)
+  integer               :: kamd_nmol, kamd_i
 

@@ -147,35 +147,34 @@ This matches what membrane proteins want: lateral diffusion in the bilayer
 plane is sampled stochastically, but the protein doesn't get punted through
 the membrane.
 
-#### Experimental molecular membrane shell (`kamd_shell_mode = 1`)
+#### Membrane shell modes (`kamd_shell_mode`)
 
-The default (`0`) retains the original atom-wise KAMD behavior. Mode `1` is
-an opt-in trial for lipid membranes. A complete membrane residue is treated as
-one molecule. The sum of contacted atom masses selects its reference group;
-an existing owner is retained while its contacted mass remains within 80% of
-the best group. Only the lipid's in-plane center-of-mass velocity is turned
-toward the same group direction as the protein surface. This molecular turn
-preserves the internal and membrane-normal velocities after the standard KAMD
-Maxwell-Boltzmann resampling. The turn is capped per reset and scaled down
-when only a small fraction of the lipid contacts the reference group.
+With the default (`0`) the redirect is atom-wise: only the lipid atoms inside `membrane_cut` are turned, which
+pulls part of a lipid and leaves the rest. The shell modes treat each lipid as one molecule (molecules are read
+from the prmtop molecule table, so lipids split into several residues are handled correctly). A lipid belongs to
+the transmembrane group it contacts with the largest mass.
+
+| mode | what happens to a contacting lipid |
+|---|---|
+| **2 (recommended)** | every atom's in-plane velocity is aligned with the group direction, keeping its in-plane speed and its velocity along `membrane_axis` (the KAMD rule for first-shell water, applied to whole lipids) |
+| 3 | as 2, but along the in-plane tangent to the group, on the side closer to the group direction |
+| 4 | octant rule (Wei, JCIM 2026, eq 2): each in-plane component keeps its magnitude and takes the sign of the group direction |
+| 1 | legacy: only the lipid's centre-of-mass velocity is turned, by at most `kamd_shell_max_angle`, with optional `kamd_shell_relax_steps` / `kamd_shell_area_floor` gates |
+
+In all shell modes the net in-plane momentum added to the membrane is removed uniformly from all lipids.
 
 ```
 &kamd
   ...
-  kamd_shell_mode        = 1,
-  kamd_shell_max_angle   = 45.0,   ! degrees; 180 allows full alignment
-  kamd_shell_relax_steps = 50000,  ! minimum 100 ps at dt=0.002 ps
-  kamd_shell_area_floor  = 0.95,   ! defer resets below 95% of starting xy area
+  membrane_mask   = ":POPC,POPE,POPI,POPS",
+  membrane_axis   = 3,
+  membrane_cut    = 5,
+  kamd_shell_mode = 2,
 /
 ```
 
-The area gate is a coarse safety signal, not a measure of local lipid stress.
-It uses the membrane-plane area at the start of each run as its reference. Resets resume
-when the interval has passed and the area has recovered. Use an equilibrated,
-healthy starting structure. The shell mode assumes each lipid is represented
-by one complete topology residue in `membrane_mask`; a partial residue is an
-error. Compare protein transitions and membrane structure against the default
-mode before using this experimental mode for production.
+Use the nonbonded settings of the lipid force field (for CHARMM36: `cut=12.0, fswitch=10.0`, `&ewald vdwmeth=0`).
+With pmemd's defaults a CHARMM36 bilayer condenses towards a gel-like state and lipids stop exchanging.
 
 You can mix solution and TM groups in the same simulation freely (e.g., a
 soluble domain plus a TM helix on the same protein).

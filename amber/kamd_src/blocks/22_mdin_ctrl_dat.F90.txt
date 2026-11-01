@@ -1,3 +1,5 @@
+!*******************************************************************************
+!
 ! Subroutine:  read_kamd_namelist
 !
 ! Description: Read the optional &kamd namelist.  Defaults are set in
@@ -34,8 +36,8 @@ subroutine read_kamd_namelist()
 
   read(mdin, nml = kamd)
 
-  if (kamd_shell_mode < 0 .or. kamd_shell_mode > 1) then
-    write(mdout, '(a,a)') error_hdr, '&kamd: kamd_shell_mode must be 0 or 1'
+  if (kamd_shell_mode < 0 .or. kamd_shell_mode > 4) then
+    write(mdout, '(a,a)') error_hdr, '&kamd: kamd_shell_mode must be 0..4'
     call mexit(6, 1)
   end if
   if (kamd_shell_relax_steps < 0 .or. kamd_shell_max_angle <= 0.0d0 .or. &
@@ -150,7 +152,7 @@ subroutine read_kamd_namelist()
       call mexit(6, 1)
     end if
   end if
-  if (kamd_shell_mode == 1 .and. &
+  if (kamd_shell_mode >= 1 .and. &
       .not. any(region_type(1:kamd_ngroups) == KAMD_RT_TRANSMEMBRANE)) then
     write(mdout, '(a,a)') error_hdr, '&kamd: kamd_shell_mode requires a transmembrane region'
     call mexit(6, 1)
@@ -406,5 +408,3 @@ subroutine resolve_kamd_masks(natom, nres, igraph, isymbl, ipres, lbres, crd)
 
 end subroutine resolve_kamd_masks
 
-!*******************************************************************************
-!

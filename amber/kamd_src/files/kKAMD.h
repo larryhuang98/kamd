@@ -785,6 +785,177 @@ kKAMD_RedirectMembraneMolecules_kernel(int2* molRange, int* previousOwner,
   }
 }
 
+//---------------------------------------------------------------------------------------------
+// Whole-lipid alignment (kamd_shell_mode = 2 / 3, experimental, 2026-10-29).
+//
+// The KAMD rule for solvent, v_new = d * |v| per atom, aligns all atoms of a first-shell water
+// molecule with the group direction d, so the molecule's random internal motion becomes
+// coherent translation along d. Modes 0/1 never do this for lipids: mode 0 turns only the lipid
+// atoms inside membrane_cut (part of a molecule), mode 1 only rotates the lipid COM velocity.
+// Here every atom of a lipid that contacts a transmembrane group is aligned in the membrane
+// plane, each keeping its in-plane speed and its velocity component along the membrane normal.
+//   mode 2: d = the owner group's direction (same kick as the protein surface)
+//   mode 3: d = in-plane tangent to the owner group at the lipid, on the side closer to the
+//           group's direction (the lipid slides along the protein surface)
+//   mode 4: octant rule of the KAMD paper (Wei, JCIM 2026, eq 2) for whole lipids: each in-plane
+//           component keeps its magnitude and takes the sign of the group direction
+// The net in-plane momentum added is removed uniformly from the membrane afterwards
+// (kKAMD_BalanceMembraneImpulse_kernel), as in mode 1.
+//---------------------------------------------------------------------------------------------
+__device__ static inline void kKAMD_MinImage(double& dx, double& dy, double& dz, int isNTP)
+{
+  double u00, u01, u02, u11, u12, u22, r00, r10, r11, r20, r21, r22;
+  if (isNTP) {
+    u00 = cSim.pNTPData->ucell[0]; u01 = cSim.pNTPData->ucell[1]; u02 = cSim.pNTPData->ucell[2];
+    u11 = cSim.pNTPData->ucell[4]; u12 = cSim.pNTPData->ucell[5]; u22 = cSim.pNTPData->ucell[8];
+    r00 = cSim.pNTPData->recip[0]; r10 = cSim.pNTPData->recip[3]; r11 = cSim.pNTPData->recip[4];
+    r20 = cSim.pNTPData->recip[6]; r21 = cSim.pNTPData->recip[7]; r22 = cSim.pNTPData->recip[8];
+  } else {
+    u00 = cSim.ucell[0][0]; u01 = cSim.ucell[0][1]; u02 = cSim.ucell[0][2];
+    u11 = cSim.ucell[1][1]; u12 = cSim.ucell[1][2]; u22 = cSim.ucell[2][2];
+    r00 = cSim.recip[0][0]; r10 = cSim.recip[1][0]; r11 = cSim.recip[1][1];
+    r20 = cSim.recip[2][0]; r21 = cSim.recip[2][1]; r22 = cSim.recip[2][2];
+  }
+  double fx = dx*r00 + dy*r10 + dz*r20;
+  double fy =          dy*r11 + dz*r21;
+  double fz =                   dz*r22;
+  fx -= round(fx); fy -= round(fy); fz -= round(fz);
+  dx = fx*u00 + fy*u01 + fz*u02;
+  dy =          fy*u11 + fz*u12;
+  dz =                   fz*u22;
+}
+
+// Mass-weighted COM of each reference group, relative to the group's first atom
+// (com[4g+0..2] = sum m*d, com[4g+3] = sum m).
+__global__ void
+kKAMD_GroupCOM_kernel(int totalRefAtoms, const int2* refInfo, const int* groupFirst,
+                      double* com, int isNTP)
+{
+  int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= totalRefAtoms) return;
+  int orig = refInfo[i].x;
+  int g = refInfo[i].y - 1;
+  unsigned int s  = cSim.pImageAtomLookup[orig];
+  unsigned int s0 = cSim.pImageAtomLookup[groupFirst[g]];
+  double dx = cSim.pImageX[s] - cSim.pImageX[s0];
+  double dy = cSim.pImageY[s] - cSim.pImageY[s0];
+  double dz = cSim.pImageZ[s] - cSim.pImageZ[s0];
+  kKAMD_MinImage(dx, dy, dz, isNTP);
+  double m = cSim.pImageMass[s];
+  atomicAdd(&com[4*g+0], m*dx);
+  atomicAdd(&com[4*g+1], m*dy);
+  atomicAdd(&com[4*g+2], m*dz);
+  atomicAdd(&com[4*g+3], m);
+}
+
+__global__ void
+kKAMD_AlignMembraneMolecules_kernel(int2* molRange, int* previousOwner, int nMol, int* record,
+    double* randomDir, int nGroups, double half_dtx, int splitForces, int dirMode,
+    const int* groupFirst, const double* groupCOM, int isNTP, double* impulse)
+{
+  int m = blockIdx.x * blockDim.x + threadIdx.x;
+  if (m >= nMol) return;
+  int2 range = molRange[m];
+  double score[32];
+  for (int g = 0; g < 32; g++) score[g] = 0.0;
+  double massTotal = 0.0;
+  for (int orig = range.x; orig <= range.y; orig++) {
+    unsigned int s = cSim.pImageAtomLookup[orig];
+    double mass = cSim.pImageMass[s];
+    int group = record[orig];
+    if (group > 0 && group <= nGroups && cSim.pKAMDRegionType[group-1] == 2)
+      score[group-1] += mass;
+    massTotal += mass;
+  }
+  atomicAdd(&impulse[3], massTotal);   // every lipid shares the balancing correction
+
+  int owner = 0;
+  double best = 0.0;
+  for (int g = 0; g < nGroups; g++) {
+    if (score[g] > best) { best = score[g]; owner = g + 1; }
+  }
+  if (best <= 0.0 || massTotal <= 0.0) { previousOwner[m] = 0; return; }
+  int old = previousOwner[m];
+  if (old > 0 && old <= nGroups && score[old-1] >= 0.8 * best) owner = old;
+  previousOwner[m] = owner;
+
+  int axis = cSim.KAMDMembraneAxis - 1;          // 0,1,2
+  double d[3] = { randomDir[3*(owner-1)+0], randomDir[3*(owner-1)+1], randomDir[3*(owner-1)+2] };
+  d[axis] = 0.0;
+  {
+    double n = sqrt(d[0]*d[0] + d[1]*d[1] + d[2]*d[2]);
+    if (n < 1.0e-12) return;
+    d[0] /= n; d[1] /= n; d[2] /= n;
+  }
+  if (dirMode == 3) {
+    // lipid COM relative to the owner group's COM, in the membrane plane
+    unsigned int f = cSim.pImageAtomLookup[range.x];
+    double c[3] = {0.0, 0.0, 0.0};
+    for (int orig = range.x; orig <= range.y; orig++) {
+      unsigned int s = cSim.pImageAtomLookup[orig];
+      double dx = cSim.pImageX[s] - cSim.pImageX[f];
+      double dy = cSim.pImageY[s] - cSim.pImageY[f];
+      double dz = cSim.pImageZ[s] - cSim.pImageZ[f];
+      kKAMD_MinImage(dx, dy, dz, isNTP);
+      double mass = cSim.pImageMass[s];
+      c[0] += mass*dx; c[1] += mass*dy; c[2] += mass*dz;
+    }
+    int g = owner - 1;
+    unsigned int s0 = cSim.pImageAtomLookup[groupFirst[g]];
+    double gm = groupCOM[4*g+3];
+    if (gm > 0.0) {
+      double r[3];
+      r[0] = cSim.pImageX[f] + c[0]/massTotal - (cSim.pImageX[s0] + groupCOM[4*g+0]/gm);
+      r[1] = cSim.pImageY[f] + c[1]/massTotal - (cSim.pImageY[s0] + groupCOM[4*g+1]/gm);
+      r[2] = cSim.pImageZ[f] + c[2]/massTotal - (cSim.pImageZ[s0] + groupCOM[4*g+2]/gm);
+      kKAMD_MinImage(r[0], r[1], r[2], isNTP);
+      r[axis] = 0.0;
+      int a = (axis + 1) % 3, b = (axis + 2) % 3;  // right-handed in-plane axes
+      double t[3] = {0.0, 0.0, 0.0};
+      t[a] = -r[b]; t[b] = r[a];
+      double n = sqrt(t[a]*t[a] + t[b]*t[b]);
+      if (n > 1.0e-6) {
+        t[a] /= n; t[b] /= n;
+        if (t[a]*d[a] + t[b]*d[b] < 0.0) { t[a] = -t[a]; t[b] = -t[b]; }
+        d[0] = t[0]; d[1] = t[1]; d[2] = t[2];
+      }
+    }
+  }
+
+  double dp[3] = {0.0, 0.0, 0.0};
+  for (int orig = range.x; orig <= range.y; orig++) {
+    unsigned int s = cSim.pImageAtomLookup[orig];
+    PMEAccumulator fx = cSim.pForceXAccumulator[s];
+    PMEAccumulator fy = cSim.pForceYAccumulator[s];
+    PMEAccumulator fz = cSim.pForceZAccumulator[s];
+    if (splitForces) {
+      fx += cSim.pNBForceXAccumulator[s];
+      fy += cSim.pNBForceYAccumulator[s];
+      fz += cSim.pNBForceZAccumulator[s];
+    }
+    double wfac = cSim.pImageInvMass[s] * half_dtx * (double)ONEOVERFORCESCALE;
+    double fw[3] = { (double)fx * wfac, (double)fy * wfac, (double)fz * wfac };
+    double v[3] = { cSim.pImageVelX[s] + fw[0], cSim.pImageVelY[s] + fw[1], cSim.pImageVelZ[s] + fw[2] };
+    double vpar = v[axis];
+    double sp2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2] - vpar*vpar;
+    double sp = sp2 > 0.0 ? sqrt(sp2) : 0.0;
+    double vn[3];
+    if (dirMode == 4) {   // octant: keep |v_k|, take the sign of d_k (in-plane components)
+      for (int k = 0; k < 3; k++) vn[k] = (d[k] >= 0.0 ? fabs(v[k]) : -fabs(v[k]));
+    } else {
+      vn[0] = d[0]*sp; vn[1] = d[1]*sp; vn[2] = d[2]*sp;
+    }
+    vn[axis] = vpar;
+    double mass = cSim.pImageMass[s];
+    for (int k = 0; k < 3; k++) dp[k] += mass * (vn[k] - v[k]);
+    cSim.pImageVelX[s] = vn[0] - fw[0];
+    cSim.pImageVelY[s] = vn[1] - fw[1];
+    cSim.pImageVelZ[s] = vn[2] - fw[2];
+  }
+  for (int k = 0; k < 3; k++) if (k != axis) atomicAdd(&impulse[k], dp[k]);
+  atomicAdd(&impulse[4], 1.0);
+}
+
 // Remove only the net in-plane momentum that molecular shell redirection added.
 // All lipids receive the same small velocity offset, so the local, coherent
 // first-shell motion remains available to make space for the moving protein.
@@ -896,18 +1067,64 @@ extern "C" void kKAMD_RedirectMembraneMolecules(gpuContext gpu,
   if ((gpu->sim.ntp > 0) && (gpu->sim.barostat != 2)) splitForces = 1;
 #endif
   int blocks = (gpu->nKAMDMembraneMol + 127) / 128;
-  kKAMD_RedirectMembraneMolecules_kernel<<<blocks, 128>>>(
-      gpu->pbKAMDMembraneMol->_pDevData,
-      gpu->pbKAMDMembraneOwner->_pDevData,
-      gpu->nKAMDMembraneMol,
-      gpu->sim.pKAMDRecord,
-      pRandomDir,
-      gpu->pbKAMDRegionType->_length,
-      half_dtx,
-      splitForces,
-      gpu->kamdShellMaxAngle,
-      gpu->pbKAMDMembraneImpulse->_pDevData);
-  LAUNCHERROR("kKAMD_RedirectMembraneMolecules");
+  if (gpu->kamdShellMode == 1) {
+    kKAMD_RedirectMembraneMolecules_kernel<<<blocks, 128>>>(
+        gpu->pbKAMDMembraneMol->_pDevData,
+        gpu->pbKAMDMembraneOwner->_pDevData,
+        gpu->nKAMDMembraneMol,
+        gpu->sim.pKAMDRecord,
+        pRandomDir,
+        gpu->pbKAMDRegionType->_length,
+        half_dtx,
+        splitForces,
+        gpu->kamdShellMaxAngle,
+        gpu->pbKAMDMembraneImpulse->_pDevData);
+    LAUNCHERROR("kKAMD_RedirectMembraneMolecules");
+  } else {
+    // modes 2/3: whole-lipid alignment. Group COM buffers are allocated on first use
+    // (experimental mode; kept local to avoid changing gpuContext).
+    static int*    dGroupFirst = NULL;
+    static double* dGroupCOM   = NULL;
+    const int ng = gpu->pbKAMDRegionType->_length;
+    const int totalRefAtoms = gpu->pbKAMDRefAtomInfo->_length;
+    const int dirMode = gpu->kamdShellMode;
+    const int tangential = (dirMode == 3);
+    int isNTP = ((gpu->sim.ntp > 0) && (gpu->sim.barostat != 2)) ? 1 : 0;
+    if (tangential) {
+      if (dGroupFirst == NULL) {
+        int* first = new int[ng];
+        for (int g = 0; g < ng; g++) first[g] = -1;
+        for (int i = 0; i < totalRefAtoms; i++) {
+          int g = gpu->pbKAMDRefAtomInfo->_pSysData[i].y - 1;
+          if (g >= 0 && g < ng && first[g] < 0) first[g] = gpu->pbKAMDRefAtomInfo->_pSysData[i].x;
+        }
+        for (int g = 0; g < ng; g++) if (first[g] < 0) first[g] = 0;
+        cudaMalloc((void**)&dGroupFirst, ng * sizeof(int));
+        cudaMalloc((void**)&dGroupCOM, 4 * ng * sizeof(double));
+        cudaMemcpy(dGroupFirst, first, ng * sizeof(int), cudaMemcpyHostToDevice);
+        delete[] first;
+      }
+      cudaMemsetAsync(dGroupCOM, 0, 4 * ng * sizeof(double));
+      kKAMD_GroupCOM_kernel<<<(totalRefAtoms + 255) / 256, 256>>>(
+          totalRefAtoms, (int2*)gpu->pbKAMDRefAtomInfo->_pDevData, dGroupFirst, dGroupCOM, isNTP);
+      LAUNCHERROR("kKAMD_GroupCOM");
+    }
+    kKAMD_AlignMembraneMolecules_kernel<<<blocks, 128>>>(
+        gpu->pbKAMDMembraneMol->_pDevData,
+        gpu->pbKAMDMembraneOwner->_pDevData,
+        gpu->nKAMDMembraneMol,
+        gpu->sim.pKAMDRecord,
+        pRandomDir,
+        ng,
+        half_dtx,
+        splitForces,
+        dirMode,
+        dGroupFirst,
+        dGroupCOM,
+        isNTP,
+        gpu->pbKAMDMembraneImpulse->_pDevData);
+    LAUNCHERROR("kKAMD_AlignMembraneMolecules");
+  }
   int nAtoms = gpu->sim.KAMDMembraneEnd - gpu->sim.KAMDMembraneStart + 1;
   int balanceBlocks = (nAtoms + 255) / 256;
   kKAMD_BalanceMembraneImpulse_kernel<<<balanceBlocks, 256>>>(

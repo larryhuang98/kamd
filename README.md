@@ -99,7 +99,7 @@ The same names are used in all three engines (GROMACS writes `-` for `_` and use
 | temperature | `temperature` | Amber: `temp0`; GROMACS: `ref-t`; OpenMM: required | Temperature of the Maxwell-Boltzmann redraw. Must equal the thermostat temperature. |
 | seed | `seed` | Amber: `ig`; GROMACS: `ld-seed`; OpenMM: `None` | Random seed for the redraw and the directions. |
 | `ion_traj_outfreq`, `ion_mask`, `ion_traj_file` | – | 0 (off) | Amber only: write ion positions relative to the membrane every N steps, for offline crossing counts. Works without KAMD. |
-| `kamd_shell_mode` and `kamd_shell_*` | – | 0 (off) | Amber only, **experimental**: molecular membrane shell (whole lipids are turned in-plane, with an optional area gate). See the [tutorial](amber/doc/kamd_tutorial.md). |
+| `kamd_shell_mode` | – | 0 | Amber only. How lipids next to transmembrane groups are redirected: 0 = atom by atom (only lipid atoms within `membrane_cut`); **2 = whole lipid aligned with the group direction (recommended for membranes)**; 3 = whole lipid along the protein-surface tangent; 4 = whole lipid, octant rule; 1 = legacy centre-of-mass turn. See [Membrane proteins](#membrane-proteins) and the [tutorial](amber/doc/kamd_tutorial.md). |
 
 How to set them:
 
@@ -118,6 +118,26 @@ How to set them:
   solvents or coarse-grained models.
 * **Thermostat and barostat.** Keep your usual settings (Langevin/`sd`, Monte Carlo or c-rescale barostat). The
   redraw uses the thermostat temperature, so the temperature stays at its target.
+
+### Membrane proteins
+
+* **Use the nonbonded settings of the lipid force field.** For CHARMM36 lipids (the CHARMM-GUI default) in Amber:
+  `cut = 12.0, fswitch = 10.0` in `&cntrl` and `vdwmeth = 0` in `&ewald`. With pmemd's defaults (8 Å hard cutoff
+  plus a long-range dispersion correction) a CHARMM36 bilayer slowly condenses towards a gel-like state, with or
+  without KAMD, and lipids next to the protein stop exchanging. Check the area per lipid and the tail order
+  parameters after equilibration.
+* **Equilibrate under NPT** (semi-isotropic, e.g. `ntp = 3, csurften = 3, gamma_ten = 0, barostat = 2`), **then run
+  KAMD under NVT.**
+* Give transmembrane groups `region_type = 2`, set `membrane_mask` (whole lipid molecules; contiguous atom range),
+  `membrane_axis` and `membrane_cut`, and use **`kamd_shell_mode = 2`**. It aligns every atom of a lipid that touches
+  a group with that group's direction, as KAMD does for first-shell water molecules, so lipids next to the protein
+  receive the same kick as the protein surface; the folded protein is held back and the lipids move on. Lipid
+  molecules are read from the prmtop molecule table, so lipids split into several residues (Amber Lipid21) are
+  handled as whole molecules.
+* In tests on VDAC in a POPC/POPE/POPI/POPS bilayer (CHARMM36, NVT, 300 K, ~150 ns) mode 2 tripled the exchange of
+  the lipids around the protein relative to plain MD and widened the protein's conformational sampling, with the
+  bulk lipid order unchanged. Pushing lipids between resets as well (tested as a separate mode) pulled lipids out
+  of the bilayer and was dropped.
 
 ### Checking that it works
 

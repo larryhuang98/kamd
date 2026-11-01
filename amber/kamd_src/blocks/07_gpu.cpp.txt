@@ -1,3 +1,4 @@
+//---------------------------------------------------------------------------------------------
 // gpu_kamd_download_record_: download the KAMD first-shell detection results for debugging.
 //---------------------------------------------------------------------------------------------
 extern "C" void gpu_kamd_download_record_(int* result_record, int* natoms)
@@ -47,7 +48,7 @@ extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
                                  double* shell_cut, double* surface_cut,
                                  double* membrane_cut,
                                  int* ngroups,
-                                 int* residue_starts, int* nres,
+                                 int* mol_starts, int* nmol,
                                  int* shell_mode, double* shell_max_angle)
 {
   PRINTMETHOD("gpu_kamd_setup");
@@ -97,12 +98,12 @@ extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
     const int start = *membrane_start - 1;
     const int end = *membrane_end - 1;
     int count = 0;
-    for (int r = 0; r < *nres; r++) {
-      int first = residue_starts[r] - 1;
-      int last = (r + 1 < *nres ? residue_starts[r+1] - 2 : natoms - 1);
+    for (int r = 0; r < *nmol; r++) {
+      int first = mol_starts[r] - 1;
+      int last = (r + 1 < *nmol ? mol_starts[r+1] - 2 : natoms - 1);
       if (last < start || first > end) continue;
       if (first < start || last > end) {
-        fprintf(stderr, "KAMD shell: membrane_mask must contain complete lipid residues\n");
+        fprintf(stderr, "KAMD shell: membrane_mask must contain complete lipid molecules\n");
         exit(1);
       }
       count++;
@@ -112,9 +113,9 @@ extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
     gpu->pbKAMDMembraneOwner = new GpuBuffer<int>(max(count, 1));
     gpu->pbKAMDMembraneImpulse = new GpuBuffer<double>(5);
     int m = 0;
-    for (int r = 0; r < *nres; r++) {
-      int first = residue_starts[r] - 1;
-      int last = (r + 1 < *nres ? residue_starts[r+1] - 2 : natoms - 1);
+    for (int r = 0; r < *nmol; r++) {
+      int first = mol_starts[r] - 1;
+      int last = (r + 1 < *nmol ? mol_starts[r+1] - 2 : natoms - 1);
       if (first < start || last > end) continue;
       gpu->pbKAMDMembraneMol->_pSysData[m].x = first;
       gpu->pbKAMDMembraneMol->_pSysData[m].y = last;
@@ -123,7 +124,7 @@ extern "C" void gpu_kamd_setup_(int* refer_atoms, int* refer_groups,
     }
     gpu->pbKAMDMembraneMol->Upload();
     gpu->pbKAMDMembraneOwner->Upload();
-    fprintf(stdout, "KAMD shell: %d complete membrane residues\n", count);
+    fprintf(stdout, "KAMD shell: %d complete membrane molecules\n", count);
   }
 
   // Stash bath ranges (converted to 0-based), membrane axis, and squared cutoffs
@@ -290,4 +291,3 @@ extern "C" void gpu_kamd_ion_gather_(double* ion_xyz, double* com,
   }
 }
 
-//---------------------------------------------------------------------------------------------

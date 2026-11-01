@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.0 (unreleased)
+
+* **amber/**: whole-lipid membrane shell modes, `kamd_shell_mode = 2` (recommended), 3 and 4. Lipids touching a
+  transmembrane group are turned as whole molecules, as KAMD does for first-shell water. Lipid molecules come from
+  the prmtop molecule table instead of residues, so split-residue lipids (Amber Lipid21) are handled correctly.
+* Documentation: nonbonded settings for CHARMM36 lipids (`cut=12, fswitch=10, vdwmeth=0`); NPT equilibration
+  followed by NVT KAMD for membrane proteins.
+
 ## 0.1.0 (2026-10-29)
 
 First public release.

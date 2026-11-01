@@ -1,5 +1,5 @@
 {
- "kamd_version": "0.1.0",
+ "kamd_version": "0.2.0",
  "amber": "26",
  "new_files": [
   {
@@ -74,8 +74,7 @@
    "before": [
     "  kResetVelocities(gpu, *temp, *half_dtx);\n",
     "}\n",
-    "\n",
-    "//---------------------------------------------------------------------------------------------\n"
+    "\n"
    ],
    "old": [],
    "after": [],
@@ -235,9 +234,7 @@
    "file": "src/pmemd/src/mdin_ctrl_dat.F90",
    "before": [
     "end subroutine init_mdin_ctrl_dat\n",
-    "\n",
-    "!*******************************************************************************\n",
-    "!\n"
+    "\n"
    ],
    "old": [],
    "after": [],
