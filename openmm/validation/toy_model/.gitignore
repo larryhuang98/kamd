@@ -1,3 +1,4 @@
 pilot/
-runs/
+runs/logs/
+runs/queue.log
 __pycache__/

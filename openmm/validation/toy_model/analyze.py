@@ -40,7 +40,7 @@ LABEL = {
     "sepmon_freq": "KAMD 20/1, separation monitor",
     "plain_g0.1": "plain, γ=0.1",
     "kamd_freq_g0.1": "KAMD 20/1, γ=0.1",
-    "plain_g10": "plain, γ=10",
+    "plain_g10": "plain, γ=10 (0 transitions)",
     "kamd_freq_g10": "KAMD 20/1, γ=10",
 }
 REF_OF = {c: ("plain_g0.1" if "g0.1" in c else "plain_g10" if "g10" in c else "plain") for c in ORDER}
@@ -199,6 +199,22 @@ def main():
                 lo_ps=float(edges[k]), hi_ps=float(edges[k + 1]), n=int(m.sum()),
                 T=float(tl[m, 2].mean()), T_solv=float(tl[m, 3].mean()), T_solute=float(tl[m, 4].mean()),
                 KEcom_kT=float(tl[m, 6:8].mean()), solvent_u_var=float(var), solvent_u_exkurt=float(kurt)))
+        # PMF barrier heights relative to each well (bootstrap over replicas)
+        def barriers(rr):
+            h = np.mean([np.histogram(d["rA"], bins=R_EDGES, density=True)[0] for d in rr], axis=0)
+            with np.errstate(divide="ignore"):
+                Fb = -np.log(h / centers**2)
+            top = Fb[np.abs(centers - rb) <= 0.5].mean()
+            fin = Fb[(centers > 11.5) & (centers < 13.5)].min()
+            fout = Fb[(centers > 16.5) & (centers < 18.5)].min()
+            return np.array([top - fin, top - fout])
+        b0 = barriers(reps)
+        bb = boot_reps(barriers, reps, n=1000)
+        e["barrier_from_inner"], e["barrier_from_outer"] = float(b0[0]), float(b0[1])
+        e["barrier_from_inner_err"], e["barrier_from_outer_err"] = (float(x) for x in np.nanstd(bb, 0))
+        sd = np.array([d["rgA"].std() for d in reps])
+        e["rg_sd"] = float(sd.mean())
+        e["rg_sd_sem"] = float(sd.std(ddof=1) / np.sqrt(len(sd)))
         res["conditions"][c] = e
         rows.append(c)
 
@@ -240,6 +256,8 @@ def main():
         gb = np.concatenate([d["rgA"][::st].ravel() for d in R[rc]])
         k2 = stats.ks_2samp(ga, gb)
         e["rg_ks_D"], e["rg_ks_p"] = float(k2.statistic), float(k2.pvalue)
+        e["rg_var_ratio"] = (e["rg_sd"] / er["rg_sd"]) ** 2
+        e["rg_var_ratio_err"] = 2 * e["rg_var_ratio"] * float(np.hypot(e["rg_sd_sem"] / e["rg_sd"], er["rg_sd_sem"] / er["rg_sd"]))
         e["rate_ratio"] = e["trans_per_ns"] / er["trans_per_ns"] if er["trans_per_ns"] > 0 else None
 
     # ---------------------------------------------------------- g(r)
@@ -405,16 +423,17 @@ def figures(R, H, centers, rb, res, gres):
     fig, ax = plt.subplots(1, 3, figsize=(13, 3.8))
     kc = [c for c in ["kamd_def", "kamd_freq", "mbonly", "sepmon_freq"] if c in res["conditions"]]
     for c in ["plain"] + kc:
-        cl = res["conditions"][c]["tsr_classes"]
+        cl = [k for k in res["conditions"][c]["tsr_classes"] if k["n"] >= 100]
         if c == "plain":
-            for a, key in ((ax[0], "T"), (ax[1], "KEcom_kT")):
+            for a, key in ((ax[0], "T_solute"), (ax[1], "KEcom_kT")):
                 a.axhline(cl[0][key], color=COL[c], lw=1, ls="--", label=LABEL[c])
             continue
         x = [np.sqrt(max(k["lo_ps"], 0.05) * min(k["hi_ps"], 20)) for k in cl]
-        ax[0].plot(x, [k["T"] for k in cl], "o-", color=COL[c], label=LABEL[c])
+        ax[0].plot(x, [k["T_solute"] for k in cl], "o-", color=COL[c], label=LABEL[c])
         ax[1].plot(x, [k["KEcom_kT"] for k in cl], "o-", color=COL[c], label=LABEL[c])
-    ax[0].set(xscale="log", xlabel="time since last reset (ps; class midpoint)", ylabel="kinetic T (K)",
-              title="Kinetic temperature (all atoms)")
+    ax[0].axhline(120, color="#888", lw=0.8, ls=":")
+    ax[0].set(xscale="log", xlabel="time since last reset (ps; class midpoint)", ylabel="kinetic T of the 26 solute atoms (K)",
+              title="Solute kinetic temperature (whole system stays 119.7–120.3 K)")
     ax[1].axhline(1.5, color="#888", lw=0.8, ls=":")
     ax[1].set(xscale="log", xlabel="time since last reset (ps)", ylabel="cluster COM KE (kT)",
               title="Cluster COM kinetic energy (canonical: 1.5 kT)")
@@ -424,13 +443,16 @@ def figures(R, H, centers, rb, res, gres):
     gauss = stats.norm.pdf(xc)
     for c in ["plain"] + kc:
         uh = np.sum([d["uhist"] for d in R[c]], axis=0)
-        k = uh.shape[0] - 1  # >= 3 ps since reset (or plain)
+        hk = uh[2:, 0].sum(0)  # >= 1 ps since the last reset (or plain)
         for s, ls in ((0, "-"),):
-            if uh[k, s].sum() == 0:
+            if hk.sum() < 1000 * 2022 * 3:
                 continue
-            h = uh[k, s] / uh[k, s].sum() / (x[1] - x[0])
-            ax[2].plot(xc, h / gauss - 1, ls, color=COL[c], lw=1, label=LABEL[c])
-    ax[2].set(xlim=(-4, 4), ylim=(-0.1, 0.1), xlabel="u = v·(m/kT)^½ (solvent, ≥3 ps after reset)",
+            hk8 = hk.reshape(-1, 8).sum(1)  # 0.4-wide bins
+            x8 = x[::8]
+            g8 = np.diff(stats.norm.cdf(x8))
+            ax[2].plot(0.5 * (x8[1:] + x8[:-1]), hk8 / hk8.sum() / g8 - 1, ls, color=COL[c], lw=1.2, marker="o", ms=2.5,
+                       label=LABEL[c])
+    ax[2].set(xlim=(-3.6, 3.6), ylim=(-0.03, 0.03), xlabel="u = v·(m/kT)^½ (solvent, ≥1 ps after reset)",
               ylabel="P(u)/N(0,1) − 1", title="Velocity distribution vs Maxwell-Boltzmann")
     for a in ax:
         style(a)
@@ -463,14 +485,17 @@ def table(res):
     print(f"dividing surface r_b = {res['r_barrier']:.2f} A; solvent RDF 1st min = {res['solvent_rdf_first_min_A']:.2f} A;"
           f" tau(indicator, ref) = {res['tau_indicator_ref_ps']:.0f} ps")
     hdr = ("cond", "reps", "ns", "p_in", "dF", "±", "ddF", "z", "chi2p", "KSp", "trans/ns", "±", "ratio", "res/ns",
-           "T", "Rg", "RgKSp")
+           "T", "Rg", "RgKSp", "Fb_in", "±", "Fb_out", "±", "RgVarRatio", "±")
     print("\t".join(hdr))
     for c, e in res["conditions"].items():
         f = lambda k, fmt="{:.3f}": fmt.format(e[k]) if e.get(k) is not None else "-"  # noqa: E731
         print("\t".join([c, str(e["n_reps"]), f"{e['ns_per_rep']:.2f}", f("p_inner"), f("dF"), f("dF_err"),
                          f("ddF"), f("ddF_z", "{:.2f}"), f("chi2_Pr_p"), f("ks_p"), f("trans_per_ns", "{:.2f}"),
                          f("trans_per_ns_sem", "{:.2f}"), f("rate_ratio", "{:.2f}"), f("resets_per_ns", "{:.0f}"),
-                         f("T_mean", "{:.2f}"), f("rg_mean", "{:.4f}"), f("rg_ks_p")]))
+                         f("T_mean", "{:.2f}"), f("rg_mean", "{:.4f}"), f("rg_ks_p"),
+                         f("barrier_from_inner", "{:.2f}"), f("barrier_from_inner_err", "{:.2f}"),
+                         f("barrier_from_outer", "{:.2f}"), f("barrier_from_outer_err", "{:.2f}"),
+                         f("rg_var_ratio"), f("rg_var_ratio_err")]))
 
 
 if __name__ == "__main__":
