@@ -127,3 +127,25 @@ def test_gnm_recovers_domains(name, ref, params, min_ari):
     # every literature domain is the majority of exactly one region
     owners = {int(np.bincount(t[(lab == g) & (t > 0)]).argmax()) for g in range(1, lab.max() + 1)}
     assert owners == set(range(1, len(ref) + 1))
+
+
+def test_tm_on_gpcr_b2ar_t4l():
+    """beta2-adrenergic receptor with T4 lysozyme in ICL3 (OPM 2rh1, one copy)."""
+    from kamd_regions.analysis import Analysis
+    from kamd_regions.masks import residue_summary
+    from kamd_regions.system import load_system
+
+    from conftest import DATA
+
+    an = Analysis(load_system([str(DATA / "2rh1_monomer.pdb")]))
+    assert an.membrane is not None and an.membrane.thickness == pytest.approx(31.8)
+    res = suggest(an, "tm")
+    lab, rt = res["labels"], res["region_type"]
+    tm = [g for g in rt if rt[g] == 2]
+    sol = [g for g in rt if rt[g] == 1]
+    assert len(tm) == 7  # one group per helix
+    assert len(sol) == 1
+    t4l = [r.index for r in an.s.residues if r.number >= 1002 and r.kind == "protein"]
+    assert (lab[t4l] == sol[0]).mean() == 1.0  # the T4L insert is the solution group
+    # summaries break at numbering gaps (230 -> 1002 -> 263)
+    assert "C:1002-1161" in residue_summary(an.s, np.flatnonzero(lab == sol[0]))

@@ -40,10 +40,12 @@ button.link { background: none; border: none; color: var(--accent); padding: 2px
 select, input[type="number"], input.name { background: var(--input); border: 1px solid var(--border); border-radius: 5px; padding: 2px 5px; }
 .muted { color: var(--muted); }
 .small { font-size: 11px; }
-.app { display: grid; grid-template-rows: auto auto 1fr auto; height: 100%; }
+.app { display: flex; flex-direction: column; height: 100%; }
+.app > .main { flex: 1; }
 .top { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .top .spacer { flex: 1; }
 .warn-chip { color: var(--warning); font-weight: 600; margin-left: 6px; }
+.demo-banner { padding: 6px 12px; background: var(--panel); border-bottom: 1px solid var(--border); color: var(--warning); font-size: 12px; }
 .notes { padding: 5px 12px; background: var(--panel); border-bottom: 1px solid var(--border); font-size: 12px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .notes button { align-self: flex-start; }
 .main { display: grid; grid-template-columns: 1fr 360px; min-height: 0; }
@@ -110,7 +112,14 @@ select, input[type="number"], input.name { background: var(--input); border: 1px
 .fatal { color: var(--error); }
 .note { color: var(--warning); font-size: 11px; margin-top: 4px; }
 @media (max-width: 900px) {
-  .main { grid-template-columns: 1fr; }
-  .regions { margin: 0 8px; max-height: 50vh; }
-  .bottom { grid-template-columns: 1fr; }
+  /* stack everything and let the page scroll */
+  html, body, #root { height: auto; }
+  .app { height: auto; min-height: 100%; }
+  .main { display: flex; flex-direction: column; }
+  .center { display: flex; flex-direction: column; }
+  .viewer-wrap { height: 56vh; min-height: 300px; }
+  .regions { margin: 0 8px; max-height: none; overflow: visible; }
+  .region-list { overflow: visible; }
+  .bottom { grid-template-columns: 1fr; max-height: none; margin-top: 8px; }
+  .top { flex-wrap: wrap; }
 }

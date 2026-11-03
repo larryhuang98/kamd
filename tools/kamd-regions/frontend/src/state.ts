@@ -206,7 +206,8 @@ export function summary(positions: number[], res: Residues): string {
   };
   for (let k = 1; k < sorted.length; k++) {
     const x = sorted[k];
-    if (x === p + 1 && res.chain[x] === res.chain[p] && res.index[x] === res.index[p] + 1) {
+    const numOk = res.number[x] === res.number[p] || res.number[x] === res.number[p] + 1; // numbering gap = new range
+    if (x === p + 1 && res.chain[x] === res.chain[p] && res.index[x] === res.index[p] + 1 && numOk) {
       p = x;
       continue;
     }

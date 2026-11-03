@@ -66,8 +66,10 @@ class Session:
             res["labels"], res["region_type"], names=[r.name for r in self.system.residues], settings=st
         )
         if self.an.membrane is not None and any(r.region_type == 2 for r in p.regions):
-            for r in p.regions:
-                r.name = ("TM " if r.region_type == 2 else "sol ") + r.name.split()[-1]
+            count = {1: 0, 2: 0}
+            for r in p.regions:  # TM1, TM2, ... and sol 1, sol 2, ... in sequence order
+                count[r.region_type] += 1
+                r.name = f"TM{count[2]}" if r.region_type == 2 else f"sol {count[1]}"
         p.method = {"method": res["method"], "params": params, "info": _jsonable(res["info"])}
         p.inputs = dict(self.system.files)
         return p, res["notes"]

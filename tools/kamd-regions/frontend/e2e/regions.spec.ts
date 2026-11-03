@@ -83,6 +83,8 @@ test("drag-select, new region, re-suggest, undo, export", async ({ page }) => {
   // re-suggest with GNM replaces the edited regions (after the confirm dialog)
   await page.getByTestId("method-select").selectOption("gnm");
   await page.getByTestId("resuggest").click();
+  await expect(page.getByTestId("resuggest")).toHaveText("Replace edits?"); // in-page confirmation
+  await page.getByTestId("resuggest").click();
   await expect(page.locator(".region-list .region")).toHaveCount(2);
   await expect(page.getByTestId("region-1")).toContainText("A:9-18");
   await page.keyboard.press("Control+z");
@@ -103,7 +105,7 @@ test("membrane protein: tm groups and slab", async ({ page }) => {
   await page.goto(VDAC);
   await ready(page);
   await expect(page.locator("header")).toContainText("membrane z -11.5");
-  await expect(page.getByTestId("region-1").locator("input.name")).toHaveValue("TM 1");
+  await expect(page.getByTestId("region-1").locator("input.name")).toHaveValue("TM1");
   await expect(page.getByTestId("validation")).toContainText("need a membrane bath");
   await expect(page.getByTestId("export")).toBeDisabled();
   if (SHOTS) {

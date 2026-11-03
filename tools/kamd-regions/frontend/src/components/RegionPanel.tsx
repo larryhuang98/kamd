@@ -22,6 +22,7 @@ export function RegionPanel({ doc, res, system, validation, selection, dispatch,
   const [method, setMethod] = useState<string>(system.membrane ? "tm" : "gnm");
   const [params, setParams] = useState<Record<string, Record<string, unknown>>>({});
   const [showParams, setShowParams] = useState(false);
+  const [confirming, setConfirming] = useState(false); // in-page confirm: browser dialogs may be blocked
   const [palette, setPalette] = useState<number | null>(null);
   const toggle = (id: number) =>
     setChecked((s) => {
@@ -52,12 +53,18 @@ export function RegionPanel({ doc, res, system, validation, selection, dispatch,
             className="primary"
             disabled={busy}
             data-testid="resuggest"
+            title={confirming ? "your manual edits will be replaced (undo is available)" : "run the method"}
             onClick={() => {
-              if (doc.edited && !window.confirm("Replace your manual edits with a new automatic suggestion? (Undo is available.)")) return;
+              if (doc.edited && !confirming) {
+                setConfirming(true);
+                window.setTimeout(() => setConfirming(false), 4000);
+                return;
+              }
+              setConfirming(false);
               onSuggest(method, cur);
             }}
           >
-            {busy ? "Working…" : "Re-suggest"}
+            {busy ? "Working…" : confirming ? "Replace edits?" : "Re-suggest"}
           </button>
           <button className="ghost" onClick={() => setShowParams((x) => !x)} title="method parameters">⚙</button>
         </div>

@@ -21,7 +21,7 @@ from . import gnm
 
 DEFAULTS = {
     "per_group": 0,
-    "min_heavy_tm": 150,
+    "min_heavy_tm": 100,  # ~200 atoms with hydrogens: one TM helix of a GPCR
     "turn_max": 6,
     "soluble": True,
     "slab_margin": 2.0,

@@ -79,7 +79,12 @@ def residue_summary(system, residue_indices) -> str:
     for x in list(idx[1:]) + [None]:
         if x is not None:
             x = int(x)
-        if x is not None and x == prev + 1 and res[x].chain == res[prev].chain:
+        if (
+            x is not None
+            and x == prev + 1
+            and res[x].chain == res[prev].chain
+            and res[x].number in (res[prev].number, res[prev].number + 1)  # a numbering gap starts a new range
+        ):
             prev = x
             continue
         a, b = res[start], res[prev]

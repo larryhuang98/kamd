@@ -130,6 +130,17 @@ def cmd_compare(a) -> int:
     return 0
 
 
+def cmd_snapshot(a) -> int:
+    from .session import Session
+    from .snapshot import snapshot
+
+    s = Session(a.files, a.method, _params(a.param))
+    html = snapshot(s, tuple(a.methods.split(",")), a.title, a.body_only)
+    Path(a.out).write_text(html)
+    print(f"wrote {a.out} ({len(html) / 1e6:.1f} MB); open it in a browser, no server needed")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="kamd-regions", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -175,6 +186,16 @@ def main(argv=None) -> int:
     p.add_argument("--param", action="append")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_compare)
+
+    p = sub.add_parser("snapshot", help="write a self-contained HTML page (GUI + precomputed suggestions)")
+    p.add_argument("files", nargs="+", help=files_help)
+    p.add_argument("--out", required=True, help="output .html")
+    p.add_argument("--method", default="auto", help="method shown first")
+    p.add_argument("--methods", default="gnm,contacts,tm", help="methods to precompute")
+    p.add_argument("--param", action="append")
+    p.add_argument("--title", default=None)
+    p.add_argument("--body-only", action="store_true", help="omit html/head/body (for hosts that add them)")
+    p.set_defaults(fn=cmd_snapshot)
 
     a = ap.parse_args(argv)
     try:

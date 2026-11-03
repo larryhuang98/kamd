@@ -136,13 +136,14 @@ def merge_small(
         cont = label_contacts(lab, an)
         nb = {b: w for (a, b), w in cont.items() if a == g}
         if same_type:
-            nb = {b: w for b, w in nb.items() if same_type.get(b) == same_type.get(g)} or nb
+            # never merge across region types (a soluble scrap must not grow a TM group); leave it unassigned
+            nb = {b: w for b, w in nb.items() if same_type.get(b) == same_type.get(g)}
         if nb:
             target = max(nb.items(), key=lambda kv: (kv[1], -heavy[kv[0]]))[0]
             lab[lab == g] = target
         else:
             lab[lab == g] = 0
-            notes.append(f"an isolated region of {h} heavy atoms touching no other region was left unassigned")
+            notes.append(f"a region of {h} heavy atoms with no neighbour of its own type was left unassigned")
     return lab, notes
 
 

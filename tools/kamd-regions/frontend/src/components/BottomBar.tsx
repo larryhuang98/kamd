@@ -154,7 +154,7 @@ export function BottomBar(p: Props) {
             {result.files["kamd_amber.in"] && <pre className="preview" data-testid="amber-preview">{result.files["kamd_amber.in"]}</pre>}
           </div>
         )}
-        <div className="muted small">Saving writes to {p.outDir} on the machine running kamd-regions.</div>
+        {p.outDir !== "-" && <div className="muted small">Saving writes to {p.outDir} on the machine running kamd-regions.</div>}
       </div>
     </footer>
   );

@@ -52,6 +52,13 @@ kamd-regions export   system.prmtop system.rst7 project.json --out-dir kamd_inpu
 kamd-regions compare  system.prmtop system.rst7 md.in --methods gnm,contacts --out report.md
 ```
 
+A self-contained HTML snapshot (GUI + precomputed suggestions, no server needed; editing and
+validation work in the browser, export needs `serve`):
+
+```bash
+kamd-regions snapshot tests/data/2rh1_monomer.pdb --title "β2AR KAMD Regions" --out b2ar.html
+```
+
 `--param key=value` passes method parameters (e.g. `--param n_regions=3 --param min_heavy=200`).
 
 ### Inputs
@@ -178,6 +185,8 @@ cd frontend && npm ci && npx playwright install chromium && npx playwright test 
   `gromacs/validation/index.ndx`; `config_from_amber` gives the same groups;
 * multi-domain: adenylate kinase (open) and T4 lysozyme recover their literature domains
   (ARI ≥ 0.6 / 0.55); full benchmark in [docs/gnm_multidomain.md](docs/gnm_multidomain.md);
+* GPCR: β2-adrenergic receptor with T4 lysozyme in ICL3 (OPM 2RH1, one copy): `tm` gives TM1–TM7
+  as seven transmembrane groups and T4L as one solution group;
 * membrane: OPM VDAC1 (3emn) — the `tm` method finds all 19 β-strands; OmpA (1qjp);
 * end-to-end (Playwright): load the test system, drag-select on the sequence bar, create a region,
   reassign via the context menu, drag a boundary, undo/redo, export and check `index.ndx`,

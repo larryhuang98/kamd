@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { api } from "./api";
+import { api, isDemo } from "./api";
 import { unassignedColor } from "./colors";
 import { BottomBar, download } from "./components/BottomBar";
 import { RegionPanel } from "./components/RegionPanel";
@@ -245,7 +245,7 @@ export default function App() {
     if (!pd) return;
     try {
       const r = await api.save(pd);
-      setNotes([`project saved to ${r.path}`]);
+      setNotes([isDemo ? "project.json downloaded" : `project saved to ${r.path}`]);
       download("project.json", JSON.stringify(pd, null, 1));
     } catch (e) {
       setError(String(e));
@@ -304,6 +304,13 @@ export default function App() {
         <button className="ghost" disabled={!hist.future.length} onClick={() => dispatch({ type: "redo" })} title="redo (ctrl+shift+z)">↷</button>
         <button className="ghost" onClick={() => setDark(!dark)} title="toggle theme">{dark ? "☀" : "☾"}</button>
       </header>
+      {isDemo && (
+        <div className="demo-banner" data-testid="demo-banner">
+          Offline snapshot: suggestions were computed by kamd-regions and are embedded in this page. Selecting,
+          editing, undo and validation work here; switching methods shows the precomputed default results.
+          Exporting Amber/GROMACS/OpenMM inputs needs the local program (<code>kamd-regions serve</code>).
+        </div>
+      )}
       {(notes.length > 0 || error) && (
         <div className="notes">
           {error && <div className="issue error">{error}</div>}
