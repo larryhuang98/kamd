@@ -75,12 +75,23 @@ jobs:
               subprocess.run(cmd, timeout=300)
           except subprocess.TimeoutExpired:
               print("the app did not finish within 300 s")
-          log = pathlib.Path(os.environ["KAMD_REGIONS_CONFIG"]) / "kamd-regions.log"
-          print("--- app log"); print(log.read_text(errors="replace") if log.exists() else "(none)")
           r = json.loads(out.read_text()) if out.exists() else {}
-          print("--- result", r)
+          print("--- result", r, flush=True)
+          log = pathlib.Path(os.environ["KAMD_REGIONS_CONFIG"]) / "kamd-regions.log"
+          text = log.read_text(errors="replace") if log.exists() else "(no log)"
+          print("--- app log (escaped)")
+          for line in text.splitlines()[-80:]:
+              print(json.dumps(line)[1:-1][:400])
+          pathlib.Path("selftest-log.txt").write_text(text)
           st = r.get("state") or {}
           sys.exit(0 if r.get("ok") and st.get("screen") == "main" and st.get("regions") == 4 else 1)
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: selftest-${{ matrix.name }}
+          path: |
+            tools/kamd-regions/packaging/selftest.json
+            tools/kamd-regions/packaging/selftest-log.txt
       - name: package
         working-directory: tools/kamd-regions/packaging/dist
         run: |
