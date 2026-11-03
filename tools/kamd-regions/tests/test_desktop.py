@@ -28,8 +28,14 @@ def test_open_flow_and_recent(tmp_path, monkeypatch):
     assert [len(r) for r in c.get("/api/app").json()["recent"]] == [1, 3]
 
 
-def test_bridge_save_text(tmp_path):
+def test_bridge_save_text(tmp_path, monkeypatch):
+    import sys
+    from types import SimpleNamespace
+
     from kamd_regions.desktop import Bridge
+
+    # pywebview is optional (desktop extra); a stand-in module is enough for the bridge logic
+    monkeypatch.setitem(sys.modules, "webview", SimpleNamespace(FileDialog=SimpleNamespace(OPEN=0, SAVE=1, FOLDER=2)))
 
     class FakeWindow:
         def create_file_dialog(self, kind, **kw):
