@@ -33,7 +33,7 @@ native open/save dialogs, a start screen with recently opened files, and *Export
 The interface is the same as in the browser.
 
 **Ready-made builds** (no Python needed) are produced by the `kamd-regions-desktop` workflow for
-Linux (x64), macOS (Apple silicon) and Windows (x64): Actions → kamd-regions-desktop → the latest run
+Linux (x64), macOS (Apple silicon and Intel) and Windows (x64): Actions → kamd-regions-desktop → the latest run
 → Artifacts. Each build is started once in CI with a self-test that loads the Amber test system in
 the native window.
 
