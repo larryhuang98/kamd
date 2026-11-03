@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kamd-regions"
+version = "0.1.0"
+description = "Suggest, edit and export KAMD reference groups (Amber / GROMACS / OpenMM) with a local GUI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "Zhen Huang" },
+  { name = "Yong Duan" },
+  { name = "Ray Luo" },
+  { name = "Haixin Wei" },
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "parmed",
+  "mdtraj",
+  "networkx",
+  "igraph",
+  "leidenalg",
+  "fastapi",
+  "uvicorn",
+]
+
+[project.optional-dependencies]
+gromacs = ["MDAnalysis"]
+# kamd_openmm (../../openmm) is used to re-validate exports; install it with
+#   pip install --no-deps ./openmm      (core validation needs only numpy)
+test = ["pytest", "httpx", "prody"]
+
+[project.scripts]
+kamd-regions = "kamd_regions.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/larryhuang98/kamd"
+
+[tool.setuptools]
+packages = ["kamd_regions", "kamd_regions.methods"]
+
+[tool.setuptools.package-data]
+kamd_regions = ["static/*", "static/assets/*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "UP", "I"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["kamd_regions"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::SyntaxWarning"]

@@ -1,0 +1,121 @@
+"""Local FastAPI server for the GUI (``kamd-regions serve``)."""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from .project import Settings
+from .session import Session
+
+STATIC = Path(__file__).parent / "static"
+
+
+def create_app(session: Session, default_out: str | None = None) -> FastAPI:
+    app = FastAPI(title="kamd-regions", docs_url="/api/docs")
+    state = {"session": session, "out": default_out or str(Path.cwd() / "kamd_regions_out")}
+
+    def ses() -> Session:
+        return state["session"]
+
+    @app.get("/api/session")
+    def get_session():
+        s = ses()
+        return {
+            "system": s.system_summary(),
+            "project": s.project.to_dict(),
+            "validation": s.validate(),
+            "out_dir": state["out"],
+        }
+
+    @app.get("/api/structure")
+    def get_structure():
+        return ses().viewer_structure()
+
+    @app.post("/api/suggest")
+    def post_suggest(body: dict = Body(...)):
+        s = ses()
+        st = None
+        if body.get("settings"):
+            st = Settings(**{k: v for k, v in body["settings"].items() if k in Settings.__dataclass_fields__})
+        try:
+            p, notes = s.suggest(body.get("method", "auto"), body.get("params") or {}, st)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"project": p.to_dict(), "notes": notes, "validation": s.validate(p.to_dict())}
+
+    @app.post("/api/validate")
+    def post_validate(body: dict = Body(...)):
+        try:
+            return ses().validate(body["project"])
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.post("/api/export")
+    def post_export(body: dict = Body(...)):
+        engines = tuple(body.get("engines") or ("amber", "gromacs", "openmm"))
+        out_dir = body.get("out_dir") if body.get("write", False) else None
+        res = ses().export(body["project"], engines, out_dir=out_dir)
+        return res
+
+    @app.post("/api/export.zip")
+    def post_export_zip(body: dict = Body(...)):
+        engines = tuple(body.get("engines") or ("amber", "gromacs", "openmm"))
+        res = ses().export(body["project"], engines)
+        if not res["ok"]:
+            raise HTTPException(400, "validation errors: " + "; ".join(e["message"] for e in
+                                                                     res["validation"]["errors"]))
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for name, text in res["files"].items():
+                z.writestr(name, text)
+        return Response(buf.getvalue(), media_type="application/zip",
+                        headers={"Content-Disposition": "attachment; filename=kamd_inputs.zip"})
+
+    @app.post("/api/project/save")
+    def post_save(body: dict = Body(...)):
+        path = body.get("path") or str(Path(state["out"]) / "project.json")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        return {"path": ses().save(body["project"], path)}
+
+    @app.post("/api/import")
+    def post_import(body: dict = Body(...)):
+        try:
+            p, notes = ses().import_text(body["kind"], body["text"], body.get("ndx_text"))
+        except Exception as exc:  # user input: report, don't crash
+            raise HTTPException(400, f"import failed: {exc}") from exc
+        return {"project": p.to_dict(), "notes": notes, "validation": ses().validate(p.to_dict())}
+
+    @app.post("/api/project/load")
+    def post_load(body: dict = Body(...)):
+        from .project import Project
+
+        try:
+            p = Project.from_dict(body["project"])
+        except Exception as exc:
+            raise HTTPException(400, f"not a project file: {exc}") from exc
+        return {"project": p.to_dict(), "notes": p.check_against(ses().system),
+                "validation": ses().validate(p.to_dict())}
+
+    if (STATIC / "index.html").exists():
+        app.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")
+
+        @app.get("/")
+        def index():
+            return FileResponse(STATIC / "index.html")
+    else:
+
+        @app.get("/")
+        def no_frontend():
+            return Response(
+                "<h1>kamd-regions</h1><p>The frontend is not built. Run <code>npm run build</code> in "
+                "tools/kamd-regions/frontend, or use the API at <a href='/api/docs'>/api/docs</a>.</p>",
+                media_type="text/html",
+            )
+
+    return app
