@@ -16,7 +16,7 @@ from ..secstruct import segments
 
 DEFAULTS = {
     "min_run": 3,  # residues
-    "min_heavy": 300,  # heavy atoms per region
+    "min_heavy": 150,  # heavy atoms per region (~300 atoms with hydrogens)
     "unassign_flexible": True,
     "loop_min_len": 8,  # interior coil runs at least this long can be dropped
     "flex_factor": 1.5,  # ... if their GNM fluctuation is this many times the median

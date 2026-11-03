@@ -84,7 +84,7 @@ test("drag-select, new region, re-suggest, undo, export", async ({ page }) => {
   await page.getByTestId("method-select").selectOption("gnm");
   await page.getByTestId("resuggest").click();
   await expect(page.locator(".region-list .region")).toHaveCount(2);
-  await expect(page.getByTestId("region-1")).toContainText("A:9-19");
+  await expect(page.getByTestId("region-1")).toContainText("A:9-18");
   await page.keyboard.press("Control+z");
   await expect(page.locator(".region-list .region")).toHaveCount(5);
 });

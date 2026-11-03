@@ -33,6 +33,16 @@ class Analysis:
         return np.flatnonzero(np.isin(self.s.res_kind, ["protein", "nucleic"]))
 
     @cached_property
+    def gnm_nodes(self) -> np.ndarray:
+        """Residues of the GNM network: protein residues (nucleic acids only if there is no protein).
+
+        Nucleic-acid strands bound to a protein are left out: they are loosely connected to the
+        protein network and their slow modes would dominate the decomposition.
+        """
+        prot = np.flatnonzero(self.s.res_kind == "protein")
+        return prot if prot.size >= 4 else self.polymer
+
+    @cached_property
     def rep_xyz(self) -> np.ndarray:
         """One representative point per residue (CA, C4', or heavy-atom centroid)."""
         s = self.s
@@ -78,16 +88,16 @@ class Analysis:
         return m
 
     # ---------------------------------------------------------------- GNM
-    def gnm(self, cutoff: float = 7.3, n_modes: int = 20):
-        """GNM of the polymer residues: (eigvals, eigvecs, n_zero) of the Kirchhoff matrix.
+    def gnm(self, cutoff: float = 10.0, n_modes: int = 20):
+        """GNM of :attr:`gnm_nodes`: (eigvals, eigvecs, n_zero) of the Kirchhoff matrix.
 
-        Eigenvectors are rows = polymer residues (order of :attr:`polymer`).
+        Eigenvector rows follow the order of :attr:`gnm_nodes`.
         """
         key = (round(cutoff, 3), n_modes)
         cache = self.__dict__.setdefault("_gnm", {})
         if key in cache:
             return cache[key]
-        x = self.rep_xyz[self.polymer]
+        x = self.rep_xyz[self.gnm_nodes]
         n = len(x)
         tree = cKDTree(x)
         pairs = tree.query_pairs(cutoff, output_type="ndarray")
@@ -122,7 +132,7 @@ class Analysis:
     def msf(self) -> np.ndarray:
         """GNM mean-square fluctuation per residue, normalised to median 1 (0 for non-polymer)."""
         out = np.zeros(self.s.n_residues)
-        if self.polymer.size < 4:
+        if self.gnm_nodes.size < 4:
             return out
         vals, vecs, nz = self.gnm()
         v = vecs[:, nz:]
@@ -131,7 +141,7 @@ class Analysis:
             return out
         f = (v * v / lam[None, :]).sum(axis=1)
         med = np.median(f)
-        out[self.polymer] = f / med if med > 0 else f
+        out[self.gnm_nodes] = f / med if med > 0 else f
         return out
 
     # ---------------------------------------------------------------- membrane

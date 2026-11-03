@@ -99,7 +99,7 @@ post-processing.
 
 | method | default | what it does |
 |---|---|---|
-| `gnm` | yes (no membrane) | Gaussian network model on Cα (cutoff 7.3 Å). The Kirchhoff matrix is the Laplacian of the contact network; residues are clustered (k-means) on the k−1 slowest non-zero modes, i.e. the largest-scale relative motions, and k is chosen by the eigengap unless `n_regions` is set. Hinges (sign changes of the slowest mode) are reported. Needs one structure. |
+| `gnm` | yes (no membrane) | Gaussian network model on the protein Cα atoms (cutoff 10 Å; nucleic acids are left out of the network). The Kirchhoff matrix is the Laplacian of the contact network; residues are clustered (k-means) on the k−1 slowest non-zero modes, i.e. the largest-scale relative motions, and k is chosen by the eigengap unless `n_regions` is set. Hinges (sign changes of the slowest mode) are reported. Needs one structure. Tested on ADK, T4 lysozyme and HhaI methyltransferase: [docs/gnm_multidomain.md](docs/gnm_multidomain.md). |
 | `contacts` | | heavy-atom contact graph (4.5 Å, plus sequence-neighbour edges) split into communities with Leiden (`leidenalg`; RB-configuration, `resolution` slider, higher = smaller blocks). Gives spatially compact blocks. |
 | `tm` | yes when a membrane and TM segments are found | DSSP helices (≥ 10 residues) and strands (≥ 5) that cross the slab: enough residues inside it **and** an extent along the normal ≥ 45 % of the slab thickness, which keeps amphipathic interface helices out. One group per segment or per `per_group` neighbouring segments (0 = as many as needed for `min_heavy_tm`); short turns between them are included. `region_type = 2`. Large extramembrane parts are decomposed with GNM into solution groups. |
 
@@ -107,7 +107,7 @@ Post-processing (all methods): runs shorter than `min_run` residues are smoothed
 neighbour; coil termini and coil loops ≥ `loop_min_len` with high GNM fluctuation
 (> `flex_factor` × median) are left unassigned — KAMD does not move unassigned protein atoms,
 which is what you want for flexible linkers and tails; regions below `min_heavy` heavy atoms
-(default 300; for very small proteins capped at a third of the protein) are merged into the
+(default 150, about 300 atoms with hydrogens; for very small proteins capped at a third of the protein) are merged into the
 region they touch most; at most 32 regions (the Amber limit); ids renumbered in sequence order.
 Ligands and other non-polymer residues can be assigned by hand but are never assigned
 automatically.
@@ -166,7 +166,7 @@ groups go through `kamd_openmm.KAMDConfig(...).validate(n_atoms)`.
 ## Tests
 
 ```bash
-cd tools/kamd-regions && pytest -q                       # 64 tests
+cd tools/kamd-regions && pytest -q                       # 66 tests
 cd frontend && npm ci && npx playwright install chromium && npx playwright test   # end-to-end
 ```
 
@@ -176,6 +176,8 @@ cd frontend && npm ci && npx playwright install chromium && npx playwright test 
 * integration on `amber/test` (prmtop + restrt + md_test.in): the imported four groups equal the
   original masks atom by atom; the export round-trips through ParmEd and equals
   `gromacs/validation/index.ndx`; `config_from_amber` gives the same groups;
+* multi-domain: adenylate kinase (open) and T4 lysozyme recover their literature domains
+  (ARI ≥ 0.6 / 0.55); full benchmark in [docs/gnm_multidomain.md](docs/gnm_multidomain.md);
 * membrane: OPM VDAC1 (3emn) — the `tm` method finds all 19 β-strands; OmpA (1qjp);
 * end-to-end (Playwright): load the test system, drag-select on the sequence bar, create a region,
   reassign via the context menu, drag a boundary, undo/redo, export and check `index.ndx`,
@@ -192,6 +194,8 @@ path, not domain detection.
 
 * The automatic methods target domains of hundreds of atoms or more; on small or disordered
   proteins they give coarse halves (see the report). Always review the suggestion.
+* `gnm`'s eigengap often picks only the largest motion (ADK: CORE vs. LID); set `n_regions` when
+  you know how many domains to expect. In compact closed states domains can fuse (closed ADK).
 * GROMACS `.top` files need their force-field includes; `.tpr` (MDAnalysis) is the safer input.
 * Membrane detection expects a planar bilayer; vesicles, micelles and strongly curved membranes
   are not handled (set the slab manually in *KAMD settings*).

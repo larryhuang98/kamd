@@ -18,7 +18,7 @@ import numpy as np
 
 from ..analysis import Analysis
 
-DEFAULTS = {"n_regions": 0, "cutoff": 7.3, "max_auto": 8}
+DEFAULTS = {"n_regions": 0, "cutoff": 10.0, "max_auto": 8}
 
 
 def kmeans(x: np.ndarray, k: int, n_init: int = 10, seed: int = 0, iters: int = 100) -> np.ndarray:
@@ -49,13 +49,13 @@ def kmeans(x: np.ndarray, k: int, n_init: int = 10, seed: int = 0, iters: int = 
     return best[1]
 
 
-def hinges(an: Analysis, cutoff: float = 7.3) -> list[int]:
+def hinges(an: Analysis, cutoff: float = 10.0) -> list[int]:
     """Residue indices where the slowest GNM mode changes sign (within a chain)."""
     vals, vecs, nz = an.gnm(cutoff)
     if vecs.shape[1] <= nz:
         return []
     v = vecs[:, nz]
-    poly = an.polymer
+    poly = an.gnm_nodes
     out = []
     chain_of = {}
     for c in an.s.chains():
@@ -64,7 +64,9 @@ def hinges(an: Analysis, cutoff: float = 7.3) -> list[int]:
     for j in range(len(poly) - 1):
         a, b = poly[j], poly[j + 1]
         if chain_of.get(a) == chain_of.get(b) and v[j] * v[j + 1] < 0:
-            out.append(int(a if abs(v[j]) < abs(v[j + 1]) else b))
+            h = int(a if abs(v[j]) < abs(v[j + 1]) else b)
+            if not out or out[-1] != h:
+                out.append(h)
     return out
 
 
@@ -83,7 +85,7 @@ def choose_k(vals: np.ndarray, nz: int, kmax: int) -> tuple[int, list[float]]:
 
 def suggest(an: Analysis, params: dict) -> tuple[np.ndarray, dict]:
     p = {**DEFAULTS, **{k: v for k, v in params.items() if k in DEFAULTS}}
-    poly = an.polymer
+    poly = an.gnm_nodes
     labels = np.zeros(an.s.n_residues, dtype=np.int64)
     if poly.size < 4:
         return labels, {"notes": ["fewer than 4 polymer residues; nothing to decompose"]}
@@ -99,7 +101,8 @@ def suggest(an: Analysis, params: dict) -> tuple[np.ndarray, dict]:
     emb = vecs[:, nz : min(nz + k - 1, vecs.shape[1])]
     if nz > 1:
         emb = np.hstack([vecs[:, :nz] * 10.0, emb])
-    emb = emb / np.maximum(np.linalg.norm(emb, axis=1, keepdims=True), 1e-12)
+    # no row normalisation: residues with small slow-mode amplitude (near a hinge) should not be
+    # pushed onto the unit sphere; benchmark in docs/gnm_multidomain.md
     lab = kmeans(emb, k)
     labels[poly] = lab + 1
     info = {

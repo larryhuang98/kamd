@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from kamd_regions.methods import suggest
+from kamd_regions.methods import postprocess, suggest
 from kamd_regions.methods.tm import tm_segments
 
 
@@ -24,7 +24,7 @@ def test_network_methods_on_ompa(ompa, method):
     ids = check_shape(ompa, res)
     assert len(ids) <= 32
     for g in ids:
-        assert ompa.s.res_nheavy[res["labels"] == g].sum() >= 300
+        assert ompa.s.res_nheavy[res["labels"] == g].sum() >= postprocess.DEFAULTS["min_heavy"]
     # detergent (C8E) residues are assignable but not used by the auto methods
     c8e = [r.index for r in ompa.s.residues if r.name == "C8E"]
     assert np.all(res["labels"][c8e] == 0)
@@ -34,7 +34,7 @@ def test_gnm_matches_prody(ompa):
     prody = pytest.importorskip("prody")
     vals, vecs, nz = ompa.gnm(7.3)
     g = prody.GNM()
-    g.buildKirchhoff(ompa.rep_xyz[ompa.polymer], cutoff=7.3)
+    g.buildKirchhoff(ompa.rep_xyz[ompa.gnm_nodes], cutoff=7.3)
     g.calcModes(10, zeros=False)
     assert np.allclose(vals[nz : nz + 10], g.getEigvals(), rtol=1e-6)
 
@@ -87,3 +87,43 @@ def test_methods_on_small_amber_peptide(amber_session):
         assert 2 <= len(ids) <= 4
     res = suggest(an, "tm")
     assert res["labels"].max() == 0 and any("no membrane" in n for n in res["notes"])
+
+
+# --------------------------------------------------------------------------------------------
+# multi-domain proteins with literature domains (benchmark: docs/gnm_multidomain.md)
+ADK = {"CORE": [(1, 29), (60, 121), (160, 214)], "NMP": [(30, 59)], "LID": [(122, 159)]}
+T4L = {"C": [(1, 12), (60, 164)], "N": [(13, 59)]}
+
+
+def _truth(an, ref):
+    num = np.array([r.number for r in an.s.residues])
+    t = np.zeros(an.s.n_residues, dtype=int)
+    for k, rr in enumerate(ref.values()):
+        for a, b in rr:
+            t[(num >= a) & (num <= b) & (an.s.res_kind == "protein")] = k + 1
+    return t
+
+
+@pytest.mark.parametrize(
+    "name,ref,params,min_ari",
+    [
+        ("adk_open.pdb", ADK, {"n_regions": 3}, 0.6),
+        ("t4l.pdb", T4L, {}, 0.55),
+    ],
+)
+def test_gnm_recovers_domains(name, ref, params, min_ari):
+    from kamd_regions.analysis import Analysis
+    from kamd_regions.compare import adjusted_rand
+    from kamd_regions.system import load_system
+
+    from conftest import DATA
+
+    an = Analysis(load_system([str(DATA / name)]))
+    res = suggest(an, "gnm", params)
+    lab, t = res["labels"], _truth(an, ref)
+    assert lab.max() == len(ref)
+    both = (lab > 0) & (t > 0)
+    assert adjusted_rand(t[both], lab[both]) >= min_ari
+    # every literature domain is the majority of exactly one region
+    owners = {int(np.bincount(t[(lab == g) & (t > 0)]).argmax()) for g in range(1, lab.max() + 1)}
+    assert owners == set(range(1, len(ref) + 1))
