@@ -1,0 +1,208 @@
+<title>KAMD 重置的能量重分配</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@500;700&family=Noto+Sans+SC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column (~68ch) like a technical note; equations and tables in quiet framed blocks; one accent (argon-blue) for the KAMD side, ink for the reference. */
+:root {
+  --paper: #f7f8f7;
+  --ink: #1b2124;
+  --ink-2: #4a5458;
+  --rule: #d5dad9;
+  --well: #eceff0;
+  --accent: #1f62a8;
+  --hot: #c2551f;
+  --cold: #2c7fb8;
+  --font-display: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-body: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #14191b; --ink: #e4e8e8; --ink-2: #a9b3b5; --rule: #2f383b; --well: #1d2427;
+    --accent: #6aa8e8; --hot: #ef8a55; --cold: #6cb6e6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #14191b; --ink: #e4e8e8; --ink-2: #a9b3b5; --rule: #2f383b; --well: #1d2427;
+  --accent: #6aa8e8; --hot: #ef8a55; --cold: #6cb6e6; color-scheme: dark;
+}
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.8; }
+.wrap { max-width: 46rem; margin: 0 auto; padding-block: 48px 80px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { border-bottom: 1px solid var(--rule); padding-bottom: 20px; margin-bottom: 8px; }
+.kicker { font-family: var(--font-mono); font-size: 12px; letter-spacing: .08em; color: var(--ink-2); text-transform: uppercase; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 5vw, 34px); line-height: 1.3; margin: 8px 0 10px; text-wrap: balance; }
+.byline { color: var(--ink-2); font-size: 14px; }
+h2 { font-family: var(--font-display); font-weight: 700; font-size: 22px; margin: 44px 0 8px; text-wrap: balance; }
+h2 .sec { font-family: var(--font-mono); font-size: 14px; color: var(--accent); margin-right: 10px; font-weight: 500; }
+h3 { font-size: 16px; font-weight: 700; margin: 26px 0 4px; }
+p { margin: 10px 0; }
+ul, ol { padding-left: 1.3em; margin: 8px 0; }
+li { margin: 4px 0; }
+.abstract { background: var(--well); border-radius: 6px; padding: 18px 20px; margin: 24px 0; }
+.abstract p { margin: 6px 0; }
+.eq { font-family: var(--font-mono); font-size: 14.5px; background: var(--well); padding: 14px 16px; border-radius: 6px; margin: 14px 0; overflow-x: auto; white-space: pre; line-height: 1.7; }
+.eq .n { float: right; color: var(--ink-2); }
+code, .m { font-family: var(--font-mono); font-size: .92em; }
+sub, sup { font-size: .72em; line-height: 0; }
+.tbl { overflow-x: auto; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-weight: 700; color: var(--ink-2); font-size: 13px; }
+td.num, th.num { text-align: right; font-family: var(--font-mono); font-size: 13.5px; }
+.note { color: var(--ink-2); font-size: 14px; }
+.callout { border-left: 3px solid var(--accent); padding: 4px 0 4px 16px; margin: 18px 0; }
+.claim { font-weight: 700; }
+/* energy bars, drawn to scale: 1 kT = 1em-ish via percentage of 20 kT */
+.bars { display: grid; grid-template-columns: 1fr; gap: 14px; margin: 18px 0; }
+.barrow { display: grid; grid-template-columns: 5.5em 1fr; gap: 10px; align-items: center; font-size: 13.5px; }
+.barrow .lab { color: var(--ink-2); }
+.track { display: flex; height: 26px; border-radius: 4px; overflow: hidden; background: var(--well); }
+.seg { display: flex; align-items: center; padding: 0 8px; font-family: var(--font-mono); font-size: 12px; white-space: nowrap; color: var(--paper); }
+.seg.com { background: var(--hot); }
+.seg.int { background: var(--cold); }
+.legend { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+.status { display: inline-block; font-family: var(--font-mono); font-size: 11.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--rule); color: var(--ink-2); margin-left: 6px; vertical-align: 1px; }
+footer { margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--rule); color: var(--ink-2); font-size: 13.5px; }
+a { color: var(--accent); }
+@media (max-width: 480px) { body { font-size: 15px; } .eq { font-size: 13px; } }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="kicker">KAMD · 理论说明 · 2026-11-03</div>
+  <h1>KAMD 重置的能量重分配：为什么"速率守恒"不等于"温度守恒"</h1>
+  <div class="byline">配合 <code>openmm/validation/toy_model/RESULTS.md</code> 阅读。所有数值来自同一组玩具模型模拟（LJ 液体，120 K，两个 13 原子二十面体团簇）。</div>
+</header>
+
+<div class="abstract">
+  <p><span class="claim">结论。</span>KAMD 的 pseudo-BD 重置由两部分组成：Maxwell-Boltzmann（MB）重采样和保速率的定向推动（redirect）。前者保持正则分布，后者不保持。</p>
+  <p>Redirect 保住每个原子的速率，因此总动能不变。但它把基团内部的动能搬进基团的质心平动：对一个 13 原子团簇，质心动能从 1.5 kT 升到约 14 kT，内部振动动能从 18 kT 降到约 5 kT。这个数可以解析算出，和实测吻合。</p>
+  <p>体系在弛豫回来之前采到的构型，对应的是"集体坐标偏热、内部坐标偏冷"的非平衡状态。偏差大小由弛豫时间与重置间隔之比决定，同一个机制同时带来加速和偏差。</p>
+</div>
+
+<h2><span class="sec">§1</span>重置的形式化</h2>
+<p>记相空间点为 (x, p)，正则分布为 π(x, p) ∝ exp[−βH(x, p)]，其中 H = U(x) + Σ<sub>i</sub> p<sub>i</sub>²/2m<sub>i</sub>，β = 1/kT。一次 KAMD 重置是一个只改动量、不改位置的随机映射：</p>
+<div class="eq">1.  p̃ᵢ ~ N(0, mᵢkT)                    对所有原子（MB 重采样）
+2.  d_g ~ 单位球面均匀分布                 每个基团 g 一个方向
+3.  S_g(x) = 基团 g 的第一溶剂层 ∪ 表面原子   （依赖构型 x）
+4.  pᵢ' = mᵢ |ṽᵢ| d_g    若 i ∈ S_g(x)
+    pᵢ' = p̃ᵢ           否则                <span class="n">(1)</span></div>
+<p>一个只改动量的随机核 K(p → p′ | x) 保持 π 不变的充要条件是：对每个 x，K 把 MB 分布映射回 MB 分布。</p>
+<div class="eq">∫ φ_MB(p) K(p → p' | x) dp = φ_MB(p')      对所有 x        <span class="n">(2)</span></div>
+<ul>
+  <li><b>只做 MB 重采样</b>（第 1 步）：输出的 p′ 就是新抽的 MB 样本，与输入无关，(2) 平凡成立。实测中这一对照组的所有构型观测量都与参考一致（P(r) χ² p = 0.99，Rg 方差比 1.001 ± 0.006）。</li>
+  <li><b>加上 redirect</b>（第 2–4 步）：S<sub>g</sub> 中所有原子的速度方向完全一致。这样的 p′ 分布集中在一个低维子集上（同组原子速度平行），不是各向同性的 Gaussian，(2) 不成立。而且 S<sub>g</sub> 依赖 x，所以偏离 MB 的方式还和构型有关。</li>
+</ul>
+<p class="note">严格来说，触发时刻依赖动量的历史（零点穿越），所以即使只做 MB 重采样，也需要额外论证才能保证不变性。本报告只依据数据说明：这一部分在当前精度下没有可测偏差。</p>
+
+<h2><span class="sec">§2</span>速率守恒，但能量换了地方</h2>
+<p>一个基团（n 个原子，总质量 M）的动能可以严格拆成两项：</p>
+<div class="eq">KE_g = KE_com + KE_int
+KE_com = |Σᵢ pᵢ|² / 2M          （3 个自由度）
+KE_int = KE_g − KE_com          （其余 3n − 3 个自由度）       <span class="n">(3)</span></div>
+<p>温度是按自由度定义的：平衡时每个二次型自由度平均 ½kT。所以正则平衡下 ⟨KE<sub>com</sub>⟩ = 3/2 kT，⟨KE<sub>int</sub>⟩ = 3(n−1)/2 kT。Redirect 不改 KE<sub>g</sub>，但会改变它在两项之间的分配。</p>
+
+<h3>解析期望值</h3>
+<p>设原子质量相同（玩具模型正好如此），n<sub>s</sub> 个原子被对齐到方向 d，其余原子保持 MB 速度。用 MB 速率的两个矩 ⟨|v|²⟩ = 3kT/m 和 ⟨|v|⟩² = 8kT/(πm)：</p>
+<div class="eq">⟨|Σ_aligned |vᵢ||²⟩ = n_s · 3kT/m + n_s(n_s − 1) · 8kT/(πm)
+⟨|Σ_rest vⱼ|²⟩      = (n − n_s) · 3kT/m
+交叉项平均为零（d 与其余速度独立）
+
+⟨KE_com⟩ = 3/2 kT + 4 n_s (n_s − 1) kT / (π n)                 <span class="n">(4)</span>
+⟨KE_int⟩ = 3(n − 1)/2 kT − 4 n_s (n_s − 1) kT / (π n)           <span class="n">(5)</span></div>
+<p>第二项来自"同方向速度不再互相抵消"：n<sub>s</sub> 个同向向量的模长平方按 n<sub>s</sub>² 增长，而随机方向只按 n<sub>s</sub> 增长。</p>
+
+<h3>代入玩具模型：n = 13，n<sub>s</sub> = 12（中心原子被包埋，不算表面原子）</h3>
+<div class="tbl"><table>
+  <thead><tr><th>量</th><th class="num">正则平衡</th><th class="num">重置后（式 4–5）</th><th class="num">实测（重置后 0–0.25 ps 平均）</th></tr></thead>
+  <tbody>
+    <tr><td>团簇质心动能 KE<sub>com</sub></td><td class="num">1.5 kT</td><td class="num">14.4 kT</td><td class="num">14.0 kT（250/2）、12.4 kT（20/1）</td></tr>
+    <tr><td>质心"模式温度" 2KE<sub>com</sub>/3k</td><td class="num">120 K</td><td class="num">≈ 1150 K</td><td class="num">—</td></tr>
+    <tr><td>内部动能 KE<sub>int</sub></td><td class="num">18.0 kT</td><td class="num">5.1 kT</td><td class="num">之后溶质温度最低降到约 103 K</td></tr>
+    <tr><td>内部"模式温度"</td><td class="num">120 K</td><td class="num">≈ 34 K</td><td class="num">—</td></tr>
+    <tr><td>基团总动能</td><td class="num">19.5 kT</td><td class="num">19.5 kT</td><td class="num">全体系 T 保持在 119.7–120.3 K</td></tr>
+  </tbody>
+</table></div>
+<p class="note">实测值是重置后头 0.25 ps 的平均，期间已经开始衰减，所以略低于瞬时的理论值。20/1 条件下下一次重置常常在完全恢复之前就到来，起点也不同。</p>
+
+<div class="bars" role="img" aria-label="团簇动能分配，按比例绘制：平衡时质心 1.5 kT、内部 18 kT；重置后质心 14.4 kT、内部 5.1 kT；总量均为 19.5 kT">
+  <div class="barrow"><span class="lab">正则平衡</span>
+    <div class="track"><div class="seg com" style="width:7.7%"></div><div class="seg int" style="width:92.3%">内部 18.0 kT</div></div></div>
+  <div class="barrow"><span class="lab">重置瞬间</span>
+    <div class="track"><div class="seg com" style="width:73.8%">质心 14.4 kT</div><div class="seg int" style="width:26.2%">5.1</div></div></div>
+  <div class="legend"><span><span class="sw" style="background:var(--hot)"></span>质心平动（3 个自由度）</span><span><span class="sw" style="background:var(--cold)"></span>内部相对运动（36 个自由度）</span><span>条长 = 19.5 kT，按比例</span></div>
+</div>
+
+<div class="callout"><b>两个团簇之间的相对坐标。</b>两个基团的方向 d<sub>1</sub>、d<sub>2</sub> 独立随机，相对速度 Δv = V<sub>1</sub> − V<sub>2</sub> 的方差是两者之和。沿两团簇连线这一维的动能期望约为 ⅓ × 14.4 ≈ 4.8 kT，正则值是 0.5 kT，相当于这一维被瞬间"加热"到约 10 倍温度。KAMD 跨越能垒的能力就来自这里。</div>
+
+<p>第一溶剂层也会被同样处理：约 40 个溶剂原子被推向同一方向，按式 (4) 获得约 50 kT 的集体动能。它们和团簇一起运动，所以推动不会立刻被溶剂"撞回来"，这让推动更有效，也让溶剂化结构在弛豫期间偏离平衡。</p>
+
+<h2><span class="sec">§3</span>弛豫与偏差的标度</h2>
+<p>重置之后，多余的集体动能通过碰撞和 Langevin 摩擦重新均分。实测的团簇质心动能在 0.1 ps、0.5 ps、1.7 ps 时分别为 14.0、4.4、1.5 kT，近似指数衰减，τ ≈ 0.35 ps（γ = 1 ps⁻¹）。设每次重置注入超额能量 ΔE，重置间隔为 Δ，则时间平均的超额能量为：</p>
+<div class="eq">⟨KE_com⟩_t ≈ 3/2 kT + ΔE · (τ/Δ) · (1 − e^(−Δ/τ))                <span class="n">(6)</span></div>
+<div class="tbl"><table>
+  <thead><tr><th>条件</th><th class="num">Δ（ps）</th><th class="num">式 (6)，τ = 0.35 ps</th><th class="num">实测时间平均</th></tr></thead>
+  <tbody>
+    <tr><td>KAMD 250/2</td><td class="num">6.3</td><td class="num">2.2 kT</td><td class="num">2.35 kT</td></tr>
+    <tr><td>KAMD 20/1</td><td class="num">0.53</td><td class="num">8.1 kT</td><td class="num">8.5 kT</td></tr>
+  </tbody>
+</table></div>
+<p>这个简单模型已经能解释观测到的偏差顺序：τ/Δ 越大，体系花在非平衡状态的时间比例越高，偏差越大。</p>
+<ul>
+  <li>频繁重置（Δ 小）比默认参数偏差大：能垒 0.26 kT 对 1.35 kT，参考值 2.00 kT。</li>
+  <li>低摩擦（τ 大）偏差更大：γ = 0.1 时 Rg 方差比降到 0.27。</li>
+  <li>高摩擦（τ 小）偏差较小但仍存在：γ = 10 时 Rg 方差比 0.89。</li>
+</ul>
+<p>注意：动能的偏差会在构型上留下痕迹。偏热的集体坐标在弛豫期间爬得更高、越过能垒，于是 P(r) 被压平；偏冷的内部模式振幅偏小，于是 Rg 分布变窄。这些构型都被计入统计。仅在"远离重置"的时刻取样并不能消除偏差，因为构型本身是由之前的非平衡轨迹带过来的。</p>
+
+<h2><span class="sec">§4</span>为什么这不是"升温"</h2>
+<p>升温方法（REST、simulated tempering 等）的每个副本或温度都对应一个已知的玻尔兹曼分布，这正是能交换或重加权回目标温度的前提。KAMD 不满足这个前提：</p>
+<ol>
+  <li>它同时制造了偏热的自由度（基团间相对运动）和偏冷的自由度（基团内部），没有任何单一温度能同时描述两者。</li>
+  <li>它的稳态分布没有解析形式，所以不能用重加权精确修正。</li>
+</ol>
+<p>更贴切的类比是 TAMD / d-AFED 这类"只加热选定慢变量"的方法。区别在于：TAMD 有绝热分离理论，知道被加热坐标的分布，可以修正；KAMD 不需要预先选 CV，但也没有这层理论保证。</p>
+
+<h2><span class="sec">§5</span>对蛋白质的推论<span class="status">推测，未测</span></h2>
+<p>对大基团（n 很大、表面原子比例 f = n<sub>s</sub>/n），式 (4) 给出：</p>
+<div class="eq">⟨KE_com⟩ ≈ (4/π) f² n kT
+被搬进质心的比例 ≈ (8 / 3π) f² ≈ 0.85 f²                         <span class="n">(7)</span></div>
+<ul>
+  <li>内部"冷却"的相对幅度随 f² 变小：f = 0.3 时约 8%，远小于玩具模型的 66%。所以蛋白质内部构象的偏差可能较弱。</li>
+  <li>但注入集体运动的绝对能量随 n 线性增长。对 1000 个原子、f = 0.3 的结构域，粗估质心动能约 100 kT，而正则值是 1.5 kT。结构域之间相对运动的"过热"可能比玩具模型更强。</li>
+  <li>真实体系的质量不等，有约束（SHAKE），还有水的流体动力学，式 (7) 只能给数量级。偏差到底多大，必须在真实蛋白上用同样的对照（普通 MD / KAMD / MB-only）实测。</li>
+</ul>
+
+<h2><span class="sec">§6</span>与其他方法结合时的含义</h2>
+<div class="tbl"><table>
+  <thead><tr><th>组合</th><th>能否消除偏差</th><th>原因</th></tr></thead>
+  <tbody>
+    <tr><td>WE 轨迹直接用 KAMD 动力学</td><td>否</td><td>WE 对给定动力学是无偏的，给出的是 KAMD 动力学的分布和速率，不是物理体系的。</td></tr>
+    <tr><td>REST，只在高副本用 KAMD</td><td>部分，不严格</td><td>交换准则假设每个副本采样各自的玻尔兹曼分布；基态副本用普通 MD 可以稀释偏差，残余多少需要测。</td></tr>
+    <tr><td>KAMD 找态 → 普通 MD 短轨迹 → MSM</td><td>是</td><td>统计权重完全由无偏动力学给出；KAMD 只决定从哪里开始。</td></tr>
+    <tr><td>KAMD 作为 MC 提议，加接受/拒绝</td><td>理论上可以，实际很难</td><td>重置映射把速度压到一个低维子集上，不保体积也不可逆，提议概率之比没有定义。</td></tr>
+  </tbody>
+</table></div>
+
+<h2><span class="sec">§7</span>可能的修正方向<span class="status">未验证</span></h2>
+<ul>
+  <li><b>降低重置频率。</b>由式 (6)，偏差约正比于 τ/Δ。可以在玩具模型上扫 <code>pseudobd_cycles</code>，找"偏差 &lt; 0.1 kT 且仍有加速"的区间。</li>
+  <li><b>用非对角质量矩阵代替推动。</b>对任意正定质量矩阵 M，哈密顿动力学（配合对应的恒温器）都保持构型分布 exp(−βU)。把基团的"集体质量"调小，集体运动就会变快，而构型分布严格不变，思路类似氢质量重分配（HMR）。这可能是"加速集体运动且保持正则"的一条严格路线，需要专门推导和测试。</li>
+  <li><b>把 KAMD 定位为探索器。</b>搜索阶段用 KAMD，定量阶段（布居、PMF、速率）交给无偏方法。</li>
+</ul>
+
+<h2><span class="sec">§8</span>本报告的局限</h2>
+<ul>
+  <li>式 (4)–(5) 假设原子质量相同、对齐原子的速率独立服从 MB，忽略了键约束；这在玩具模型中成立，在蛋白质中只是近似。</li>
+  <li>式 (6) 是唯象的单指数模型，τ 是从三个时间点粗略拟合的，只用来说明标度。</li>
+  <li>"Redirect 不保持正则分布"由式 (2) 得出，是严格的；"偏差在构型上有多大"只能由模拟给出，这里的数值只适用于这个玩具模型。</li>
+  <li>MB-only 触发规则的严格不变性没有证明，只是在当前精度下没有观察到偏差。</li>
+</ul>
+
+<footer>
+  数据与代码：分支 <code>toy-model-validation</code>，目录 <code>openmm/validation/toy_model/</code>（<code>RESULTS.md</code>、<code>results.json</code>、<code>figures/</code>）。<code>kamd_openmm/core.py</code> 未修改。
+</footer>
+</div>
