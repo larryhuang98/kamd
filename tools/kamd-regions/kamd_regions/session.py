@@ -15,6 +15,7 @@ from .methods import method_info
 from .methods import suggest as run_suggest
 from .methods.gnm import hinges
 from .methods.tm import tm_segments
+from .migrate import migrate, residue_table
 from .project import Project, Settings
 from .system import classify_files, load_system
 from .validate import validate
@@ -34,8 +35,8 @@ class Session:
             self.notes.append("A PAE file was given; the PAE method is on the roadmap and is not used yet.")
         self.project: Project
         if "project" in roles:
-            self.project = Project.load(roles["project"])
-            self.notes += self.project.check_against(self.system)
+            self.project, n = self.adopt(Project.load(roles["project"]))
+            self.notes += n
         elif "mdin" in roles:
             self.project, n = import_file(self.an, roles["mdin"])
             self.notes += n
@@ -47,7 +48,35 @@ class Session:
             self.notes += n
         else:
             self.project, _ = self.suggest(method, params or {})
-        self.project.inputs = {k: v for k, v in self.system.files.items()}
+        self.stamp(self.project)
+
+    # ---------------------------------------------------------------- project bookkeeping
+    def stamp(self, p: Project) -> Project:
+        """Record this system's files and residue table in a project (needed for later migration)."""
+        p.inputs = dict(self.system.files)
+        if not hasattr(self, "_table"):
+            self._table = residue_table(self.system)
+        p.residue_table = self._table
+        return p
+
+    def adopt(self, p: Project) -> tuple[Project, list[str]]:
+        """Use a loaded project on this system, migrating it by sequence alignment if it was made elsewhere."""
+        if p.fits(self.system):
+            return self.stamp(p), []
+        table = p.residue_table
+        if not table and p.inputs:
+            # older project file: rebuild the table from the structure it was made on, if it still exists
+            try:
+                old = load_system({k: v for k, v in p.inputs.items() if k in ("structure", "topology", "coordinates")})
+                table = residue_table(old)
+            except Exception:
+                table = {}
+        if not table:
+            return self.stamp(p), p.check_against(self.system) + [
+                "the project has no residue table, so it cannot be migrated to this system"
+            ]
+        q, rep = migrate(p, self.system, table)
+        return self.stamp(q), ["project made on another system: regions migrated by sequence alignment"] + rep.summary()
 
     # ---------------------------------------------------------------- suggestion
     def suggest(self, method: str = "auto", params: dict | None = None, settings: Settings | None = None):
@@ -71,7 +100,7 @@ class Session:
                 count[r.region_type] += 1
                 r.name = f"TM{count[2]}" if r.region_type == 2 else f"sol {count[1]}"
         p.method = {"method": res["method"], "params": params, "info": _jsonable(res["info"])}
-        p.inputs = dict(self.system.files)
+        self.stamp(p)
         return p, res["notes"]
 
     # ---------------------------------------------------------------- summaries
@@ -151,8 +180,7 @@ class Session:
     def export(
         self, d: dict | None, engines=("amber", "gromacs", "openmm"), out_dir: str | None = None, force: bool = False
     ) -> dict:
-        p = self.project_from(d)
-        p.inputs = dict(self.system.files)
+        p = self.stamp(self.project_from(d))
         v = validate(self.an, p, engines)
         blocked = [e for e in engines if not v["ok"].get(e, True)]
         if blocked and not force:
@@ -171,12 +199,11 @@ class Session:
             p, n = import_openmm(self.an, text)
         else:
             raise ValueError(kind)
-        p.inputs = dict(self.system.files)
+        self.stamp(p)
         return p, n
 
     def save(self, d: dict | None, path: str) -> str:
-        p = self.project_from(d)
-        p.inputs = dict(self.system.files)
+        p = self.stamp(self.project_from(d))
         p.save(path)
         return str(Path(path).resolve())
 

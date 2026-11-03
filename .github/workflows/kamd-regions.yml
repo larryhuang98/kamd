@@ -18,10 +18,10 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - name: install
-        # kamd_openmm is used only for KAMDConfig validation (numpy); OpenMM itself is not needed
+        # kamd_openmm (numpy only) validates exports; OpenMM is used by one test to build a real MD system
         run: |
           pip install --no-deps ./openmm
-          pip install "./tools/kamd-regions[test]" ruff
+          pip install "./tools/kamd-regions[test]" ruff openmm   # openmm: builds a real MD system in test_migrate
       - name: lint
         working-directory: tools/kamd-regions
         run: ruff check . && ruff format --check .

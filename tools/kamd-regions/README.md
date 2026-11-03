@@ -71,6 +71,61 @@ kamd-regions snapshot tests/data/2rh1_monomer.pdb --title "β2AR KAMD Regions" -
 | `project.json` | a saved kamd-regions project |
 | AlphaFold PAE JSON, second conformation | accepted, not used yet (roadmap) |
 
+## Plan on a PDB, then move the groups to the built system
+
+Groups can be planned on any structure (crystal structure, AlphaFold model, OPM file) before the
+MD system exists. Building the system (tleap, CHARMM-GUI, pdb2gmx, OpenMM) usually renumbers
+residues, drops or adds residues (missing loops, termini, caps), renames chains and histidines, and
+adds water, ions and lipids, so the residue indices no longer match. Load the saved project
+together with the built system and the regions are carried over by **sequence alignment**:
+
+```bash
+kamd-regions suggest model.pdb --out plan.json             # or edit in the GUI and "Save project"
+kamd-regions serve system.prmtop system.rst7 plan.json     # migrates automatically, with a report
+kamd-regions migrate plan.json system.prmtop system.rst7 --out project.json   # same, without the GUI
+```
+
+GUI: *Load project* on a running session does the same. How it works:
+
+1. Every polymer chain of the old system is aligned to every chain of the new one (global
+   Needleman–Wunsch on one-letter codes). Chains are paired by score; for identical copies
+   (homo-oligomers) the same label and the same order win, so chain A stays chain A even after
+   relabelling to C.
+2. Aligned residues take their region over. Residues missing in the new system are listed as
+   dropped. Residues that differ (mutations) keep their region and are listed. New residues
+   (e.g. rebuilt loops or termini) stay unassigned.
+3. Ligands in regions are matched by name and residue number.
+4. Region names, colours, types, `refer_link` and all KAMD settings are kept.
+
+A project that already fits the loaded system (same residues in the same order) is used as it is.
+Every project file stores the sequence of the system it was made on (`residue_table`). Project files
+written before this was added are migrated by re-reading the structure listed in their `inputs`,
+or with `kamd-regions migrate ... --old original.pdb`.
+
+The tests check this on a real build: plan on a crystal-like T4 lysozyme file (chain X, numbers
++10, first three residues missing, no hydrogens), build a solvated amber14 system with OpenMM,
+write a prmtop with ParmEd, migrate, export, and verify every mask atom by atom.
+
+## Transmembrane groups: in-plane pushes only
+
+KAMD itself treats the two region types differently (`openmm/kamd_openmm/core.py`, the same rule
+as pmemd and GROMACS):
+
+* **solution groups** (`region_type = 1`) get a random direction in full 3D, also in a membrane
+  system, and their first-shell water/ions and surface atoms are turned onto it;
+* **transmembrane groups** (`region_type = 2`): the random direction is projected onto the membrane
+  plane, and at a reset each redirected atom keeps its velocity component along `membrane_axis`
+  while its in-plane velocity is turned onto that direction. The momentum check that triggers resets
+  also ignores the normal component for these groups. So TM groups are pushed sideways within the
+  bilayer, never up or down through it. Lipids around them are handled by `kamd_shell_mode`
+  (Amber only; 2 = whole lipids aligned in-plane, recommended).
+
+To sample motion along the normal for part of a membrane protein (for example a juxtamembrane
+helix or a soluble domain moving towards or away from the membrane), give that part
+`region_type = 1`. It is then pushed in 3D, but its bath is the solvent only, so only nearby
+water and ions are redirected, not lipids. kamd-regions warns when a solution group lies mostly
+inside the slab.
+
 ## Using the GUI
 
 * **3D view** (3Dmol.js): cartoon coloured by region, unassigned residues light grey;
@@ -173,7 +228,7 @@ groups go through `kamd_openmm.KAMDConfig(...).validate(n_atoms)`.
 ## Tests
 
 ```bash
-cd tools/kamd-regions && pytest -q                       # 66 tests
+cd tools/kamd-regions && pytest -q                       # 74 tests
 cd frontend && npm ci && npx playwright install chromium && npx playwright test   # end-to-end
 ```
 
@@ -185,6 +240,8 @@ cd frontend && npm ci && npx playwright install chromium && npx playwright test 
   `gromacs/validation/index.ndx`; `config_from_amber` gives the same groups;
 * multi-domain: adenylate kinase (open) and T4 lysozyme recover their literature domains
   (ARI ≥ 0.6 / 0.55); full benchmark in [docs/gnm_multidomain.md](docs/gnm_multidomain.md);
+* migration: renumbered/truncated/relabelled chains, missing loops, mutations, homodimers, and a real
+  OpenMM/ParmEd-built solvated system;
 * GPCR: β2-adrenergic receptor with T4 lysozyme in ICL3 (OPM 2RH1, one copy): `tm` gives TM1–TM7
   as seven transmembrane groups and T4L as one solution group;
 * membrane: OPM VDAC1 (3emn) — the `tm` method finds all 19 β-strands; OmpA (1qjp);
@@ -208,6 +265,9 @@ path, not domain detection.
 * GROMACS `.top` files need their force-field includes; `.tpr` (MDAnalysis) is the safer input.
 * Membrane detection expects a planar bilayer; vesicles, micelles and strongly curved membranes
   are not handled (set the slab manually in *KAMD settings*).
+* Migration aligns sequences; it does not compare coordinates, so a chain whose sequence was changed
+  beyond recognition (< 50 % identity), or a protein rebuilt into a different construct, is not
+  mapped (it is reported).
 * Regions are whole residues; an imported mask that splits a residue is rounded (with a note).
 * A plain OPM PDB has no lipids, so TM groups can be suggested but not exported until the
   membrane system is built.

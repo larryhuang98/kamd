@@ -5,7 +5,7 @@ import { BottomBar, download } from "./components/BottomBar";
 import { RegionPanel } from "./components/RegionPanel";
 import { SequenceBar, type Row } from "./components/SequenceBar";
 import { Viewer3D } from "./components/Viewer3D";
-import { decode, encode, historyReducer, residueLabel, type Doc, type History } from "./state";
+import { decode, encode, historyReducer, residueLabel, type Base, type Doc, type History } from "./state";
 import type { ProjectDoc, StructureData, SystemInfo, Validation } from "./types";
 import type { PickEvent } from "./viewer/MolViewer";
 
@@ -42,7 +42,7 @@ function useTheme(): [boolean, (d: boolean) => void] {
 export default function App() {
   const [system, setSystem] = useState<SystemInfo | null>(null);
   const [structure, setStructure] = useState<StructureData | null>(null);
-  const [base, setBase] = useState<{ inputs: Record<string, string>; n_residues: number; residue_names: string[] }>({ inputs: {}, n_residues: 0, residue_names: [] });
+  const [base, setBase] = useState<Base>({ inputs: {}, n_residues: 0, residue_names: [] });
   const [hist, dispatch] = useReducer(historyReducer, { past: [], present: emptyDoc, future: [] } as History);
   const doc = hist.present;
   const [selected, setSelected] = useState<Uint8Array>(new Uint8Array(0));
@@ -65,7 +65,7 @@ export default function App() {
       .session()
       .then((s) => {
         setSystem(s.system);
-        setBase({ inputs: s.project.inputs, n_residues: s.project.n_residues, residue_names: s.project.residue_names });
+        setBase({ inputs: s.project.inputs, n_residues: s.project.n_residues, residue_names: s.project.residue_names, residue_table: s.project.residue_table });
         dispatch({ type: "replace", doc: decode(s.project, s.system.residues) });
         setSelected(new Uint8Array(s.system.residues.index.length));
         setValidation(s.validation);

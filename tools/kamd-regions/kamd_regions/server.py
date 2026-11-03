@@ -103,11 +103,11 @@ def create_app(session: Session, default_out: str | None = None) -> FastAPI:
             p = Project.from_dict(body["project"])
         except Exception as exc:
             raise HTTPException(400, f"not a project file: {exc}") from exc
-        return {
-            "project": p.to_dict(),
-            "notes": p.check_against(ses().system),
-            "validation": ses().validate(p.to_dict()),
-        }
+        try:
+            p, notes = ses().adopt(p)  # migrates by sequence alignment when made on another system
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        return {"project": p.to_dict(), "notes": notes, "validation": ses().validate(p.to_dict())}
 
     if (STATIC / "index.html").exists():
         app.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")

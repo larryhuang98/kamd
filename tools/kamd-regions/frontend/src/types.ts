@@ -25,6 +25,7 @@ export interface ProjectDoc {
   inputs: Record<string, string>;
   n_residues: number;
   residue_names: string[];
+  residue_table?: Record<string, unknown>; // sequence of the system the project was made on (migration)
   regions: Region[];
   assignment: [number, number, number][];
   settings: Settings;

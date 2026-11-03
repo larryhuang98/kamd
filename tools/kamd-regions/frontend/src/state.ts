@@ -36,7 +36,14 @@ export function decode(p: ProjectDoc, res: Residues): Doc {
   };
 }
 
-export function encode(d: Doc, res: Residues, base: { inputs: Record<string, string>; n_residues: number; residue_names: string[] }): ProjectDoc {
+export interface Base {
+  inputs: Record<string, string>;
+  n_residues: number;
+  residue_names: string[];
+  residue_table?: Record<string, unknown>;
+}
+
+export function encode(d: Doc, res: Residues, base: Base): ProjectDoc {
   const runs: [number, number, number][] = [];
   let cur: [number, number, number] | null = null;
   for (let i = 0; i < d.assign.length; i++) {
@@ -57,6 +64,7 @@ export function encode(d: Doc, res: Residues, base: { inputs: Record<string, str
     inputs: base.inputs,
     n_residues: base.n_residues,
     residue_names: base.residue_names,
+    residue_table: base.residue_table,
     regions: d.regions,
     assignment: runs,
     settings: d.settings,

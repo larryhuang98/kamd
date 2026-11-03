@@ -82,6 +82,9 @@ class Project:
     inputs: dict = field(default_factory=dict)
     method: dict = field(default_factory=dict)
     residue_names: list[str] = field(default_factory=list)  # consistency check on reload
+    # chain / number / name of the assignable residues of the system this project was made on;
+    # used to migrate the regions to another system by sequence alignment (migrate.py)
+    residue_table: dict = field(default_factory=dict)
     edited: bool = False
 
     def __post_init__(self):
@@ -130,6 +133,7 @@ class Project:
             "inputs": self.inputs,
             "n_residues": self.n_residues,
             "residue_names": self.residue_names,
+            "residue_table": self.residue_table,
             "regions": [asdict(r) for r in self.regions],
             "assignment": rle_encode(self.assignment),
             "settings": asdict(self.settings),
@@ -156,6 +160,7 @@ class Project:
             inputs=d.get("inputs", {}),
             method=d.get("method", {}),
             residue_names=d.get("residue_names", []),
+            residue_table=d.get("residue_table") or {},
             edited=bool(d.get("edited", False)),
         )
 
@@ -165,6 +170,13 @@ class Project:
     @classmethod
     def load(cls, path: str | Path) -> Project:
         return cls.from_dict(json.loads(Path(path).read_text()))
+
+    def fits(self, system) -> bool:
+        """True if the residue assignment can be used on `system` as it is."""
+        if self.n_residues != system.n_residues:
+            return False
+        names = [r.name for r in system.residues]
+        return not self.residue_names or self.residue_names == names
 
     def check_against(self, system) -> list[str]:
         """Warnings if this project was made for a different topology."""

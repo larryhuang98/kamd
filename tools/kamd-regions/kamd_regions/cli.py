@@ -130,6 +130,32 @@ def cmd_compare(a) -> int:
     return 0
 
 
+def cmd_migrate(a) -> int:
+    from .project import Project
+    from .session import Session
+    from .system import load_system
+
+    s = Session(a.files)
+    p = Project.load(a.project)
+    if a.old:
+        from .migrate import migrate, residue_table
+
+        q, rep = migrate(p, s.system, residue_table(load_system(a.old)))
+        q, notes = s.stamp(q), rep.summary()
+    else:
+        q, notes = s.adopt(p)
+    for n in notes:
+        print("note:", n)
+    v = s.validate(q.to_dict())
+    for r in q.regions:
+        st = v["regions"][str(r.id)]
+        print(f"  {r.name:12s} {st['n_atoms']:7d} atoms  {st['summary']}")
+    _print_validation(v)
+    q.save(a.out)
+    print("wrote", a.out)
+    return 0
+
+
 def cmd_snapshot(a) -> int:
     from .session import Session
     from .snapshot import snapshot
@@ -186,6 +212,15 @@ def main(argv=None) -> int:
     p.add_argument("--param", action="append")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_compare)
+
+    p = sub.add_parser("migrate", help="move a project's regions onto another system (sequence alignment)")
+    p.add_argument("project", help="project.json made on the old system")
+    p.add_argument("files", nargs="+", help="the new system (e.g. prmtop + rst7)")
+    p.add_argument("--out", required=True, help="new project.json")
+    p.add_argument(
+        "--old", nargs="+", help="structure the project was made on (only for project files without a residue table)"
+    )
+    p.set_defaults(fn=cmd_migrate)
 
     p = sub.add_parser("snapshot", help="write a self-contained HTML page (GUI + precomputed suggestions)")
     p.add_argument("files", nargs="+", help=files_help)
