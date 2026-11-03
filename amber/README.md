@@ -77,7 +77,7 @@ The full namelist reference is in [`doc/kamd_tutorial.md`](doc/kamd_tutorial.md)
 * reference groups and `refer_link`;
 * transmembrane regions;
 * ion-trajectory output;
-* the experimental membrane shell mode.
+* membrane shell modes (`kamd_shell_mode`; mode 2 is recommended for lipid bilayers).
 
 ## Membrane proteins
 
@@ -101,7 +101,9 @@ reset and exits. The OpenMM and GROMACS ports were validated against that dump.
   are driven by floating-point noise. Use two or more groups.
 * **Multi-GPU and CPU builds.** KAMD has not been validated in `pmemd.cuda.MPI` (multi-GPU). It is rejected there,
   and in CPU `pmemd`.
-* **Membrane shell mode.** The membrane shell mode (`kamd_shell_mode = 1`) is experimental; see the tutorial.
+* **Membrane shell modes.** `kamd_shell_mode = 2` (whole lipid, recommended) was tested on VDAC in a mixed
+  POPC/POPE/POPI/POPS bilayer (CHARMM36). Modes 1, 3 and 4 are experimental. The OpenMM and GROMACS ports
+  implement only mode 0 (atom by atom).
 
 ## How to cite
 

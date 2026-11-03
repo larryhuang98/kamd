@@ -1,8 +1,9 @@
 # KAMD Tutorial
 
 This is a user-facing tutorial for KAMD (Kinetic Accelerated Molecular
-Dynamics) in pmemd.cuda.  For the algorithm and the GPU implementation
-internals, see `kamd_implementation.tex`.
+Dynamics) in pmemd.cuda.  The installed code is in
+`amber/kamd_src/` of the KAMD repository (`blocks/` for the edits to pmemd,
+`files/kKAMD.h` for the CUDA kernels).
 
 KAMD is opt-in.  If you do not include a `&kamd` namelist (or you set
 `pseudobd_cycles = 0`), pmemd runs as a normal MD with no KAMD overhead.
@@ -372,8 +373,7 @@ makes it easy to find with `parmed` or by grepping the prmtop.
 
 | File | What it contains |
 |---|---|
-| `doc/kamd/kamd_tutorial.md` | This document |
-| `doc/kamd/kamd_implementation.tex` | Algorithm and GPU implementation details |
+| `amber/doc/kamd_tutorial.md` (KAMD repository) | This document |
 | `src/pmemd/src/mdin_ctrl_dat.F90` | `&kamd` namelist, validation, mask resolution |
 | `src/pmemd/src/runmd.F90` | KAMD integration into the MD driver loop |
 | `src/pmemd/src/cuda/kKAMD.h` | KAMD CUDA kernels |

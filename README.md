@@ -6,8 +6,11 @@ KAMD speeds up conformational sampling of biomolecules. It does not modify the
 potential energy surface and needs no collective variables. Every
 `pseudobd_cycles` MD steps, KAMD checks the translational momentum of user-defined
 reference groups (protein domains, transmembrane strands, …) relative to their
-common centre of mass. Once every group has reversed direction `nzero_crossings`
-times, KAMD performs a pseudo-Brownian reset:
+common centre of mass. Each group's relative momentum is projected onto the
+velocity of that common centre of mass (for transmembrane groups after removing
+the membrane-normal component), as in the original pmemd implementation; all three
+ports use the same definition. Once every group's projection has changed sign
+`nzero_crossings` times, KAMD performs a pseudo-Brownian reset:
 
 * all velocities are redrawn from Maxwell-Boltzmann at the target temperature;
 * the first-shell solvent (or membrane) atoms and the surface atoms of each group
@@ -134,6 +137,8 @@ How to set them:
   receive the same kick as the protein surface; the folded protein is held back and the lipids move on. Lipid
   molecules are read from the prmtop molecule table, so lipids split into several residues (Amber Lipid21) are
   handled as whole molecules.
+* **Modes 1–4 exist only in Amber (pmemd.cuda).** The OpenMM and GROMACS ports redirect membrane atoms one by one
+  (mode 0), which does not move lipids next to the protein; use pmemd.cuda for membrane proteins.
 * In tests on VDAC in a POPC/POPE/POPI/POPS bilayer (CHARMM36, NVT, 300 K, ~150 ns) mode 2 tripled the exchange of
   the lipids around the protein relative to plain MD and widened the protein's conformational sampling, with the
   bulk lipid order unchanged. Pushing lipids between resets as well (tested as a separate mode) pulled lipids out

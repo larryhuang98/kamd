@@ -1,11 +1,11 @@
 # Validation against pmemd.cuda (2026-10-27)
 
-System: `ambers/kamd/test/kamd` (29,467 atoms, 622 solute atoms + TIP3P), 4 reference
+System: `amber/test` (29,467 atoms, 622 solute atoms + TIP3P), 4 reference
 groups (`@20-96`, `@285-339`, `@366-482`, `@568-611`), solvent `@623-29467`.
 Settings: 355 K Langevin (γ = 5 ps⁻¹), NPT, 2 fs, SHAKE/HBonds, 8 Å cutoff,
 `pseudobd_cycles = 250`, `nzero_crossings = 2`.
 Hardware: one RTX 5090 node. Amber binary: `build_shell_balance` pmemd.cuda_SPFP
-(branch `kamd_membrane_shell_balance`). OpenMM 8.3.1, CUDA, mixed precision.
+(the development build that became v0.1.0). OpenMM 8.3.1, CUDA, mixed precision.
 Job script: `run_validation.sbatch`. Outputs: `amber29k/`.
 
 ## 1. First-shell search, atom by atom

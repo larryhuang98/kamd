@@ -102,6 +102,8 @@ diag            = no                     ; yes: dump coordinates + first shell a
 * **GPU update.** Velocities are copied to the host at each check (every `pseudobd-cycles` steps). Coordinates and
   forces are copied at a reset, and the new velocities are copied back. The measured cost is within noise.
 * **Monitor counters.** They restart in every `mdrun` invocation, checkpoint continuations included, as in pmemd.
+* **Membrane shell.** Membrane atoms are redirected one by one (pmemd `kamd_shell_mode = 0`). The whole-lipid modes
+  (pmemd `kamd_shell_mode = 2`, recommended for membrane proteins) are not ported yet.
 * **Energies at a reset step.** The leap-frog kinetic energy reported at that step averages a pre-reset and a
   post-reset half step.
 

@@ -1,6 +1,6 @@
 # GROMACS KAMD validation (2026-10-27)
 
-**System.** The pmemd KAMD test system (`ambers/kamd/test/kamd`), converted to
+**System.** The pmemd KAMD test system (`amber/test`), converted to
 GROMACS with ParmEd (`prepare_system.py`). It has 29,467 atoms and 4 reference
 groups (atoms 20–96, 285–339, 366–482, 568–611); the bath is atoms 623–29467.
 

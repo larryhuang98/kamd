@@ -1,4 +1,4 @@
-! KAMD (Kinetically Accelerated MD) — see doc/kamd/kamd_implementation.tex.
+! KAMD (Kinetically Accelerated MD) — see amber/doc/kamd_tutorial.md in the KAMD repository.
 ! Current functionality in this block includes:
 !   - mask-resolved reference groups (kamd_refer_* lists)
 !   - optional linked group directions via refer_link(:)
@@ -103,7 +103,6 @@ if (kamd_shell_mode >= 1) then
 end if
 if (sum(tmp_count(1:kamd_ngroups)) .eq. nzero_crossings * kamd_ngroups .and. kamd_shell_ready) then
   kamd_shell_gate_logged = .false.
-  write(mdout, '(a,i12)') ' KAMD_DBG RESET FIRED at nstep=', total_nstep+1
   kamd_shell_last_reset = total_nstep + 1
 
   moment       = 0.0d0

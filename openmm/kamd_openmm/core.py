@@ -1,8 +1,8 @@
 """Engine-independent KAMD algorithm (numpy only).
 
 This module is a direct port of the pmemd.cuda KAMD implementation
-(ambers/kamd, branch kamd_membrane_shell_balance, src/pmemd/src/runmd.F90 and
-src/pmemd/src/cuda/kKAMD.h).  It knows nothing about OpenMM; the engine layer
+(``amber/kamd_src`` in this repository: the runmd.F90 blocks and
+``files/kKAMD.h``).  It knows nothing about OpenMM; the engine layer
 (``kamd_openmm.reporter``) feeds it numpy arrays.
 
 Units used throughout this module (OpenMM's native units):
@@ -177,8 +177,10 @@ class KAMDConfig:
 class MomentumMonitor:
     """Zero-crossing detector for the group momenta.
 
-    Exactly reproduces the pmemd logic, including its quirks:
-      * the reference velocity is the COM velocity of *all reference groups*;
+    Exactly reproduces the pmemd logic:
+      * the reference velocity is the COM velocity of *all reference groups*, and
+        each group's relative momentum is projected onto it (the definition of the
+        original pmemd implementation, kept so the three ports agree);
       * for transmembrane groups the membrane-axis component of the relative
         momentum is zeroed before projecting;
       * after a reset ``last`` is zero, so the first check after a reset can never

@@ -114,7 +114,8 @@ cfg = config_from_amber("md.in", "system.prmtop")  # reads &kamd and temp0 from 
 ### Differences from pmemd.cuda
 
 * Only the pseudo-BD algorithm is ported. Not ported:
-  * the experimental molecular membrane shell (`kamd_shell_mode`);
+  * the whole-lipid membrane shell modes (`kamd_shell_mode` 1–4). Membrane atoms are redirected one by one
+    (mode 0), which does not move lipids next to the protein; use pmemd.cuda with mode 2 for membrane proteins;
   * the ion-trajectory output (`ion_traj_*`). OpenMM reporters already cover that.
 * Masks do not need to be contiguous, and there is no limit on the number of groups.
 * The first-shell search runs on the host. It needs one host transfer of

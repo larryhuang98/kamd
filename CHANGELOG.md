@@ -9,6 +9,11 @@
   builds sm_50 to sm_90): double-precision atomic adds in the membrane kernels now use a fallback there. In
   0.1.0 the membrane shell kernel did not compile with such toolkits. Tested with CUDA 12.3 / GCC 10.2 and
   CUDA 12.8 / GCC 11.3.
+* **amber/**: removed the `KAMD_DBG RESET FIRED` debug line from `mdout`; each reset is still reported by the
+  `KAMD: velocity reset, group N, step` lines.
+* Documentation: the momentum criterion is stated precisely (projection onto the common centre-of-mass velocity);
+  OpenMM and GROMACS README files say that only the per-atom membrane shell (mode 0) is ported; removed references
+  to files that are not in this repository.
 * Documentation: nonbonded settings for CHARMM36 lipids (`cut=12, fswitch=10, vdwmeth=0`); NPT equilibration
   followed by NVT KAMD for membrane proteins.
 
