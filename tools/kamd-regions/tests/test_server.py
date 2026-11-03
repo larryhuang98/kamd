@@ -22,22 +22,37 @@ def test_api_flow(amber_session, tmp_path):
     assert z.status_code == 200 and z.content[:2] == b"PK"
     saved = c.post("/api/project/save", json={"project": s["project"]}).json()
     assert (tmp_path / "project.json").exists() and saved["path"].endswith("project.json")
-    imp = c.post("/api/import", json={"kind": "amber", "text": "&kamd\n refer_mask(1)=':2-5', refer_mask(2)=':10-12',\n/"})
+    imp = c.post(
+        "/api/import", json={"kind": "amber", "text": "&kamd\n refer_mask(1)=':2-5', refer_mask(2)=':10-12',\n/"}
+    )
     assert imp.status_code == 200 and len(imp.json()["project"]["regions"]) == 2
     bad = c.post("/api/import", json={"kind": "amber", "text": "nothing"})
     assert bad.status_code == 400
 
 
 def test_cli_suggest_and_export(tmp_path):
-    from conftest import AMBER_TEST, DATA
     from kamd_regions.cli import main
 
+    from conftest import AMBER_TEST, DATA
+
     out = tmp_path / "p.json"
-    rc = main(["suggest", str(AMBER_TEST / "prmtop"), str(AMBER_TEST / "restrt"), "--method", "gnm", "--out",
-               str(out), "--export-dir", str(tmp_path / "ex")])
+    rc = main(
+        [
+            "suggest",
+            str(AMBER_TEST / "prmtop"),
+            str(AMBER_TEST / "restrt"),
+            "--method",
+            "gnm",
+            "--out",
+            str(out),
+            "--export-dir",
+            str(tmp_path / "ex"),
+        ]
+    )
     assert rc == 0 and out.exists() and (tmp_path / "ex" / "kamd_amber.in").exists()
-    rc = main(["export", str(AMBER_TEST / "prmtop"), str(AMBER_TEST / "restrt"), str(out), "--out-dir",
-               str(tmp_path / "ex2")])
+    rc = main(
+        ["export", str(AMBER_TEST / "prmtop"), str(AMBER_TEST / "restrt"), str(out), "--out-dir", str(tmp_path / "ex2")]
+    )
     assert rc == 0
     rc = main(["suggest", str(DATA / "3emn.pdb"), "--out", str(tmp_path / "v.json")])
     assert rc == 0

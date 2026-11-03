@@ -2,12 +2,13 @@
 
 import numpy as np
 
-from conftest import AMBER_TEST, pdb_line
 from kamd_regions.analysis import Analysis
 from kamd_regions.export import amber_namelist, gromacs_files, read_ndx
 from kamd_regions.masks import residue_summary
 from kamd_regions.project import Project
 from kamd_regions.system import load_system
+
+from conftest import AMBER_TEST, pdb_line
 
 
 def two_chain_pdb(tmp_path):
@@ -17,7 +18,9 @@ def two_chain_pdb(tmp_path):
     for chain, start in (("B", 101), ("A", 5)):
         for k in range(4):
             for j, (an, el) in enumerate((("N", "N"), ("CA", "C"), ("C", "C"), ("O", "O"))):
-                lines.append(pdb_line(serial, an, "GLY", chain, start + k, 3.8 * k + 0.4 * j, 10.0 * (chain == "A"), 0.0, el))
+                lines.append(
+                    pdb_line(serial, an, "GLY", chain, start + k, 3.8 * k + 0.4 * j, 10.0 * (chain == "A"), 0.0, el)
+                )
                 serial += 1
         lines.append("TER")
     for k in range(3):

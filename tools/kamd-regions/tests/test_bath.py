@@ -1,7 +1,8 @@
-from conftest import synthetic_membrane
 from kamd_regions.analysis import Analysis
 from kamd_regions.membrane import runs
 from kamd_regions.system import load_system
+
+from conftest import synthetic_membrane
 
 
 def test_runs():

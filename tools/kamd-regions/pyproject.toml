@@ -58,6 +58,8 @@ extend-immutable-calls = ["fastapi.Body"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["kamd_regions"]
+known-third-party = ["kamd_openmm"]
+known-local-folder = ["conftest"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

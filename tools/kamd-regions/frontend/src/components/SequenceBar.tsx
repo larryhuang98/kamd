@@ -89,11 +89,11 @@ export function SequenceBar(p: Props) {
     c.style.height = `${height}px`;
     const g = c.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const css = getComputedStyle(document.documentElement);
-    const bg = css.getPropertyValue("--panel").trim() || (p.dark ? "#1e1f22" : "#fff");
-    const fg = css.getPropertyValue("--fg").trim() || (p.dark ? "#ddd" : "#222");
-    const muted = css.getPropertyValue("--muted").trim() || "#888";
-    const tmColor = css.getPropertyValue("--tm").trim() || "#b8860b";
+    // explicit theme colours (CSS variables may not be updated yet when this effect runs)
+    const bg = p.dark ? "#1c1d21" : "#ffffff";
+    const fg = p.dark ? "#e3e5e8" : "#1d1f23";
+    const muted = p.dark ? "#9aa0a8" : "#6b7280";
+    const tmColor = p.dark ? "#e6b450" : "#b8860b";
     const hl = p.dark ? "#ffffff" : "#000000";
     g.fillStyle = bg;
     g.fillRect(0, 0, width, height);
@@ -222,7 +222,7 @@ export function SequenceBar(p: Props) {
     while (s > 0 && assign[pos[s - 1]] === L) s--;
     let e = b;
     while (e + 1 < pos.length && assign[pos[e + 1]] === R) e++;
-    return { L, R, minJ: s + 1, maxJ: e }; // new boundary in [s+1, e]
+    return { L, R, minJ: s, maxJ: e + 1 }; // a run may shrink to nothing
   };
 
   const onDown = (e: React.MouseEvent) => {

@@ -1,10 +1,11 @@
 import numpy as np
 
-from conftest import synthetic_membrane
 from kamd_regions.analysis import Analysis
 from kamd_regions.project import Project, Region
 from kamd_regions.system import load_system
 from kamd_regions.validate import validate
+
+from conftest import synthetic_membrane
 
 
 def codes(v, key="errors"):

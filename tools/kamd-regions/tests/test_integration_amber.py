@@ -3,11 +3,12 @@
 import json
 
 import numpy as np
-
-from conftest import AMBER_TEST, REPO
 from kamd_openmm.amber_input import amber_mask_indices, parse_namelist
+
 from kamd_regions.compare import compare_report
 from kamd_regions.export import export_files, read_ndx, verify
+
+from conftest import AMBER_TEST, REPO
 
 MASKS = ["@20-96", "@285-339", "@366-482", "@568-611"]
 

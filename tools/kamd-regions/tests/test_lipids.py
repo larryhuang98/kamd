@@ -1,9 +1,10 @@
 import pytest
 
-from conftest import synthetic_membrane
 from kamd_regions.analysis import Analysis
 from kamd_regions.residues import classify
 from kamd_regions.system import load_system
+
+from conftest import synthetic_membrane
 
 
 def test_lipid21_fragments_are_merged_into_molecules(tmp_path):

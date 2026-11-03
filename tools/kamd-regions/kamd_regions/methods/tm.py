@@ -42,8 +42,11 @@ def tm_segments(an: Analysis, margin: float = 2.0) -> list[dict]:
         # close beta bulges / 1-2 residue DSSP breaks inside a strand
         for k in range(1, len(codes) - 1):
             for w in (1,):
-                if k + w < len(codes) and codes[k - 1] == "E" and codes[k + w] == "E" and all(
-                    c == "C" for c in codes[k : k + w]
+                if (
+                    k + w < len(codes)
+                    and codes[k - 1] == "E"
+                    and codes[k + w] == "E"
+                    and all(c == "C" for c in codes[k : k + w])
                 ):
                     codes[k : k + w] = ["E"] * w
         for kind, min_len, min_in in (("H", 10, 8), ("E", 5, 4)):

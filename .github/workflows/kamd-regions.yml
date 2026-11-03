@@ -1,0 +1,57 @@
+name: kamd-regions
+on:
+  workflow_dispatch:
+  push:
+    paths: ["tools/kamd-regions/**", "openmm/kamd_openmm/**", ".github/workflows/kamd-regions.yml"]
+  pull_request:
+    paths: ["tools/kamd-regions/**", "openmm/kamd_openmm/**", ".github/workflows/kamd-regions.yml"]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install
+        # kamd_openmm is used only for KAMDConfig validation (numpy); OpenMM itself is not needed
+        run: |
+          pip install --no-deps ./openmm
+          pip install "./tools/kamd-regions[test]" ruff
+      - name: lint
+        working-directory: tools/kamd-regions
+        run: ruff check . && ruff format --check .
+      - name: tests
+        working-directory: tools/kamd-regions
+        run: pytest -q
+  e2e:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install backend
+        run: |
+          pip install --no-deps ./openmm
+          pip install ./tools/kamd-regions
+      - name: build frontend
+        working-directory: tools/kamd-regions/frontend
+        run: npm ci && npm run build
+      - name: static build is up to date
+        run: git diff --exit-code -- tools/kamd-regions/kamd_regions/static || (echo "run 'npm run build' in tools/kamd-regions/frontend and commit kamd_regions/static" && exit 1)
+      - name: playwright
+        working-directory: tools/kamd-regions/frontend
+        run: npx playwright install --with-deps chromium && npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: tools/kamd-regions/frontend/test-results
