@@ -230,9 +230,7 @@ def _from_parmed(struct, has_topology: bool, fmt: str) -> System:
             raise LoadError(f"residue {i + 1} ({r.name}) is not a contiguous atom range")
         chain = (r.chain or "").strip() or (getattr(r, "segid", "") or "").strip()
         kind = classify(r.name, [a.name for a in r.atoms], list(elements[start:stop]))
-        residues.append(
-            Residue(i, r.name, chain, int(r.number), (r.insertion_code or "").strip(), start, stop, kind)
-        )
+        residues.append(Residue(i, r.name, chain, int(r.number), (r.insertion_code or "").strip(), start, stop, kind))
     # ParmEd numbers prmtop residues from 0 when there is no RESIDUE_NUMBER flag
     if residues and all(r.number == r.index for r in residues):
         for r in residues:
@@ -344,8 +342,12 @@ def _parmed_from_arrays(names, elements, mass, xyz, residues):
     for r in residues:
         for a in range(r.start, r.stop):
             z = AtomicNum.get(str(elements[a]).capitalize(), 0)
-            st.add_atom(parmed.Atom(name=str(names[a]), type=str(names[a]), atomic_number=z, mass=mass[a]),
-                        r.name, r.number, r.chain)
+            st.add_atom(
+                parmed.Atom(name=str(names[a]), type=str(names[a]), atomic_number=z, mass=mass[a]),
+                r.name,
+                r.number,
+                r.chain,
+            )
     st.coordinates = xyz
     return st
 
@@ -401,8 +403,10 @@ def molecule_ids(s: System, bonds: np.ndarray | None) -> np.ndarray:
         if prev is not None:
             if r.kind in ("protein", "nucleic") and prev.kind == r.kind and prev.chain == r.chain:
                 join = _bonded(s, prev, r, 2.2) or _ca_close(s, prev, r)
-            elif r.kind == "lipid" and prev.kind == "lipid" and (
-                is_lipid21_fragment(r.name) or is_lipid21_fragment(prev.name)
+            elif (
+                r.kind == "lipid"
+                and prev.kind == "lipid"
+                and (is_lipid21_fragment(r.name) or is_lipid21_fragment(prev.name))
             ):
                 join = _bonded(s, prev, r, 2.0)
         if not join:

@@ -68,14 +68,18 @@ def create_app(session: Session, default_out: str | None = None) -> FastAPI:
         engines = tuple(body.get("engines") or ("amber", "gromacs", "openmm"))
         res = ses().export(body["project"], engines)
         if not res["ok"]:
-            raise HTTPException(400, "validation errors: " + "; ".join(e["message"] for e in
-                                                                     res["validation"]["errors"]))
+            raise HTTPException(
+                400, "validation errors: " + "; ".join(e["message"] for e in res["validation"]["errors"])
+            )
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
             for name, text in res["files"].items():
                 z.writestr(name, text)
-        return Response(buf.getvalue(), media_type="application/zip",
-                        headers={"Content-Disposition": "attachment; filename=kamd_inputs.zip"})
+        return Response(
+            buf.getvalue(),
+            media_type="application/zip",
+            headers={"Content-Disposition": "attachment; filename=kamd_inputs.zip"},
+        )
 
     @app.post("/api/project/save")
     def post_save(body: dict = Body(...)):
@@ -99,8 +103,11 @@ def create_app(session: Session, default_out: str | None = None) -> FastAPI:
             p = Project.from_dict(body["project"])
         except Exception as exc:
             raise HTTPException(400, f"not a project file: {exc}") from exc
-        return {"project": p.to_dict(), "notes": p.check_against(ses().system),
-                "validation": ses().validate(p.to_dict())}
+        return {
+            "project": p.to_dict(),
+            "notes": p.check_against(ses().system),
+            "validation": ses().validate(p.to_dict()),
+        }
 
     if (STATIC / "index.html").exists():
         app.mount("/assets", StaticFiles(directory=STATIC / "assets"), name="assets")

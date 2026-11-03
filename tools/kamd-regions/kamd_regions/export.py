@@ -92,16 +92,19 @@ def amber_namelist(an: Analysis, project: Project) -> str:
     b = an.bath
     if b.solvent_atoms.size:
         names = sorted({s.residues[i].name for i in b.solvent_residues})
-        lines.append(f'   solvent_mask    = "{bath_mask(an, b.solvent_residues, b.solvent_atoms)}",'
-                     f"   ! {', '.join(names[:8])}")
+        lines.append(
+            f'   solvent_mask    = "{bath_mask(an, b.solvent_residues, b.solvent_atoms)}",   ! {", ".join(names[:8])}'
+        )
     else:
         lines.append(f'   solvent_mask    = "{PLACEHOLDER_SOLVENT}",   ! PLACEHOLDER: no solvent in the structure')
     if has_tm(project):
         mem = effective_membrane(an, project)
         if b.membrane_atoms.size:
             names = sorted({s.residues[i].name for i in b.membrane_residues})
-            lines.append(f'   membrane_mask   = "{bath_mask(an, b.membrane_residues, b.membrane_atoms)}",'
-                         f"   ! {', '.join(names[:8])}")
+            lines.append(
+                f'   membrane_mask   = "{bath_mask(an, b.membrane_residues, b.membrane_atoms)}",'
+                f"   ! {', '.join(names[:8])}"
+            )
         if mem is not None:
             lines.append(f"   membrane_axis   = {mem.axis},")
         lines.append(f"   membrane_cut    = {st.membrane_cut},")
@@ -138,8 +141,9 @@ def gromacs_files(an: Analysis, project: Project) -> dict[str, str]:
     links = links_1based(project)
     d = ["; KAMD input for gmx mdrun -kamd kamd.dat (written by kamd-regions)"]
     if not an.s.has_topology:
-        d.append("; WARNING: written without a topology; atom numbers follow the structure file and may not "
-                 "match your .tpr")
+        d.append(
+            "; WARNING: written without a topology; atom numbers follow the structure file and may not match your .tpr"
+        )
     d += [
         "index           = index.ndx",
         f"refer-groups    = {' '.join(names)}",
@@ -268,11 +272,18 @@ def kamd_config_check(an: Analysis, project: Project) -> dict:
     d = openmm_dict(an, project)
     try:
         KAMDConfig(
-            refer_groups=d["refer_groups"], solvent_atoms=d["solvent_atoms"], temperature=d["temperature"],
-            pseudobd_cycles=d["pseudobd_cycles"], nzero_crossings=d["nzero_crossings"],
-            shell_cut=d["shell_cut"], surface_cut=d["surface_cut"], refer_link=d["refer_link"],
-            region_type=d["region_type"], membrane_atoms=d.get("membrane_atoms"),
-            membrane_axis=d.get("membrane_axis", 0), membrane_cut=d.get("membrane_cut", 3.0),
+            refer_groups=d["refer_groups"],
+            solvent_atoms=d["solvent_atoms"],
+            temperature=d["temperature"],
+            pseudobd_cycles=d["pseudobd_cycles"],
+            nzero_crossings=d["nzero_crossings"],
+            shell_cut=d["shell_cut"],
+            surface_cut=d["surface_cut"],
+            refer_link=d["refer_link"],
+            region_type=d["region_type"],
+            membrane_atoms=d.get("membrane_atoms"),
+            membrane_axis=d.get("membrane_axis", 0),
+            membrane_cut=d.get("membrane_cut", 3.0),
         ).validate(an.s.n_atoms)
     except KAMDInputError as exc:
         return {"ok": False, "message": f"KAMDConfig.validate: {exc}"}
@@ -303,9 +314,16 @@ def verify(an: Analysis, project: Project, files: dict[str, str]) -> dict:
                 continue
             sel = _mask_atoms(struct, m)
             ok = np.array_equal(np.sort(sel), np.sort(g))
-            rep["amber"].append({"item": f"refer_mask({i + 1})", "ok": bool(ok), "n_atoms": int(sel.size),
-                                 "message": "ParmEd AmberMask selects exactly the group atoms" if ok else
-                                 f"mismatch: mask selects {sel.size} atoms, group has {g.size}"})
+            rep["amber"].append(
+                {
+                    "item": f"refer_mask({i + 1})",
+                    "ok": bool(ok),
+                    "n_atoms": int(sel.size),
+                    "message": "ParmEd AmberMask selects exactly the group atoms"
+                    if ok
+                    else f"mismatch: mask selects {sel.size} atoms, group has {g.size}",
+                }
+            )
         for key, want in (("solvent_mask", b.solvent_atoms), ("membrane_mask", b.membrane_atoms)):
             m = nl.get(key)
             if m is None or struct is None or (key == "solvent_mask" and m == PLACEHOLDER_SOLVENT and not want.size):
@@ -313,26 +331,43 @@ def verify(an: Analysis, project: Project, files: dict[str, str]) -> dict:
             sel = _mask_atoms(struct, str(m))
             ok = np.array_equal(np.sort(sel), np.sort(want))
             contiguous = len(runs(np.sort(sel))) == 1
-            rep["amber"].append({"item": key, "ok": bool(ok and contiguous), "n_atoms": int(sel.size),
-                                 "message": ("matches the bath, one contiguous range" if ok and contiguous else
-                                             "matches the bath but is NOT one contiguous range" if ok else
-                                             "does not match the bath atoms")})
+            rep["amber"].append(
+                {
+                    "item": key,
+                    "ok": bool(ok and contiguous),
+                    "n_atoms": int(sel.size),
+                    "message": (
+                        "matches the bath, one contiguous range"
+                        if ok and contiguous
+                        else "matches the bath but is NOT one contiguous range"
+                        if ok
+                        else "does not match the bath atoms"
+                    ),
+                }
+            )
     if "index.ndx" in files:
         nd = read_ndx(files["index.ndx"])
         for n, g in zip(gmx_names(project), groups, strict=True):
             ok = np.array_equal(nd.get(n, np.zeros(0)), g)
             rep["gromacs"].append({"item": n, "ok": bool(ok), "n_atoms": int(g.size)})
         if b.solvent_atoms.size:
-            rep["gromacs"].append({"item": "KAMD_SOLVENT",
-                                   "ok": bool(np.array_equal(nd.get("KAMD_SOLVENT"), b.solvent_atoms)),
-                                   "n_atoms": int(b.solvent_atoms.size)})
+            rep["gromacs"].append(
+                {
+                    "item": "KAMD_SOLVENT",
+                    "ok": bool(np.array_equal(nd.get("KAMD_SOLVENT"), b.solvent_atoms)),
+                    "n_atoms": int(b.solvent_atoms.size),
+                }
+            )
     if "kamd_openmm.json" in files:
         d = json.loads(files["kamd_openmm.json"])
         for i, g in enumerate(groups):
-            rep["openmm"].append({"item": f"refer_groups[{i}]", "ok": d["refer_groups"][i] == g.tolist(),
-                                  "n_atoms": int(g.size)})
+            rep["openmm"].append(
+                {"item": f"refer_groups[{i}]", "ok": d["refer_groups"][i] == g.tolist(), "n_atoms": int(g.size)}
+            )
     rep["ok"] = all(x["ok"] for k in ("amber", "gromacs", "openmm") for x in rep[k]) and rep["kamd_config"]["ok"] in (
-        True, None)
+        True,
+        None,
+    )
     return rep
 
 

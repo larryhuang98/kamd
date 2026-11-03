@@ -87,8 +87,10 @@ def _print_verification(rep: dict) -> None:
     for eng in ("amber", "gromacs", "openmm"):
         bad = [x for x in rep[eng] if not x["ok"]]
         if rep[eng]:
-            print(f"  {eng}: {len(rep[eng]) - len(bad)}/{len(rep[eng])} items match" +
-                  ("" if not bad else " -- MISMATCH: " + ", ".join(x["item"] for x in bad)))
+            print(
+                f"  {eng}: {len(rep[eng]) - len(bad)}/{len(rep[eng])} items match"
+                + ("" if not bad else " -- MISMATCH: " + ", ".join(x["item"] for x in bad))
+            )
 
 
 def cmd_validate(a) -> int:
@@ -131,8 +133,10 @@ def cmd_compare(a) -> int:
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="kamd-regions", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    files_help = ("structure / topology / coordinate files (PDB, mmCIF, gro, prmtop + inpcrd/rst7, top/tpr), "
-                  "optionally an existing &kamd mdin, kamd.dat + index.ndx, or a project.json")
+    files_help = (
+        "structure / topology / coordinate files (PDB, mmCIF, gro, prmtop + inpcrd/rst7, top/tpr), "
+        "optionally an existing &kamd mdin, kamd.dat + index.ndx, or a project.json"
+    )
 
     p = sub.add_parser("serve", help="start the GUI")
     p.add_argument("files", nargs="+", help=files_help)

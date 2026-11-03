@@ -12,8 +12,15 @@ from .analysis import Analysis
 from .project import Project, Region, Settings, default_color
 
 
-def _groups_to_project(an: Analysis, groups: list[np.ndarray], names: list[str], rtype: list[int],
-                       links: list[int], settings: Settings, source: str) -> tuple[Project, list[str]]:
+def _groups_to_project(
+    an: Analysis,
+    groups: list[np.ndarray],
+    names: list[str],
+    rtype: list[int],
+    links: list[int],
+    settings: Settings,
+    source: str,
+) -> tuple[Project, list[str]]:
     s = an.s
     notes: list[str] = []
     assignment = np.zeros(s.n_residues, dtype=np.int64)
@@ -36,17 +43,31 @@ def _groups_to_project(an: Analysis, groups: list[np.ndarray], names: list[str],
                 if not keep:
                     continue
             if assignment[r] and assignment[r] != rid:
-                notes.append(f"{s.residues[int(r)].label()} is in groups {assignment[r]} and {rid}; kept in "
-                             f"{assignment[r]}")
+                notes.append(
+                    f"{s.residues[int(r)].label()} is in groups {assignment[r]} and {rid}; kept in {assignment[r]}"
+                )
                 continue
             assignment[r] = rid
-        regions.append(Region(rid, names[i] if i < len(names) else f"group {rid}", default_color(i),
-                              int(rtype[i]) if i < len(rtype) else 1, int(links[i]) if i < len(links) else 0))
+        regions.append(
+            Region(
+                rid,
+                names[i] if i < len(names) else f"group {rid}",
+                default_color(i),
+                int(rtype[i]) if i < len(rtype) else 1,
+                int(links[i]) if i < len(links) else 0,
+            )
+        )
     bad = np.flatnonzero((assignment > 0) & ~an.assignable)
     if bad.size:
         notes.append(f"{bad.size} residues of the imported groups are water/ion/lipid by name; they stay in the group")
-    p = Project(n_residues=s.n_residues, regions=regions, assignment=assignment, settings=settings,
-                method={"method": "import", "source": source}, residue_names=[r.name for r in s.residues])
+    p = Project(
+        n_residues=s.n_residues,
+        regions=regions,
+        assignment=assignment,
+        settings=settings,
+        method={"method": "import", "source": source},
+        residue_names=[r.name for r in s.residues],
+    )
     return p, notes
 
 
@@ -94,8 +115,15 @@ def import_amber(an: Analysis, mdin_text: str) -> tuple[Project, list[str]]:
         temperature=float(cntrl.get("temp0", 300.0)),
         seed=int(cntrl["ig"]) if "ig" in cntrl and int(cntrl["ig"]) > 0 else None,
     )
-    p, notes = _groups_to_project(an, groups, [f"group {i + 1}" for i in range(len(groups))],
-                                  per("region_type", 1), per("refer_link", 0), settings, "amber")
+    p, notes = _groups_to_project(
+        an,
+        groups,
+        [f"group {i + 1}" for i in range(len(groups))],
+        per("region_type", 1),
+        per("refer_link", 0),
+        settings,
+        "amber",
+    )
     p.method["masks"] = masks
     if kamd.get("solvent_mask"):
         _bath_note(an, "solvent", amber_mask_indices(st, str(kamd["solvent_mask"])), notes)
@@ -143,8 +171,7 @@ def import_gromacs(an: Analysis, dat_text: str, ndx_text: str) -> tuple[Project,
         temperature=float(d.get("temperature", 300.0)),
         seed=int(d["seed"]) if d.get("seed") and int(d["seed"]) >= 0 else None,
     )
-    p, notes = _groups_to_project(an, groups, names, ints("region-type", 1), ints("refer-link", 0), settings,
-                                  "gromacs")
+    p, notes = _groups_to_project(an, groups, names, ints("region-type", 1), ints("refer-link", 0), settings, "gromacs")
     if d.get("solvent-group") in nd:
         _bath_note(an, "solvent", nd[d["solvent-group"]], notes)
     if d.get("membrane-group") in nd:
@@ -166,8 +193,9 @@ def import_openmm(an: Analysis, text: str) -> tuple[Project, list[str]]:
         seed=d.get("seed"),
     )
     names = d.get("group_names") or [f"group {i + 1}" for i in range(n)]
-    p, notes = _groups_to_project(an, groups, names, d.get("region_type") or [1] * n,
-                                  d.get("refer_link") or [0] * n, settings, "openmm")
+    p, notes = _groups_to_project(
+        an, groups, names, d.get("region_type") or [1] * n, d.get("refer_link") or [0] * n, settings, "openmm"
+    )
     if "solvent_atoms" in d:
         _bath_note(an, "solvent", np.asarray(d["solvent_atoms"]), notes)
     return p, notes

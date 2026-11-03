@@ -115,8 +115,9 @@ def label_contacts(labels: np.ndarray, an: Analysis) -> dict[tuple[int, int], fl
     return out
 
 
-def merge_small(labels: np.ndarray, an: Analysis, min_heavy: int, keep_at_least: int = 2,
-                same_type: dict[int, int] | None = None) -> tuple[np.ndarray, list[str]]:
+def merge_small(
+    labels: np.ndarray, an: Analysis, min_heavy: int, keep_at_least: int = 2, same_type: dict[int, int] | None = None
+) -> tuple[np.ndarray, list[str]]:
     lab = labels.copy()
     notes: list[str] = []
     while True:
@@ -179,7 +180,7 @@ def postprocess(labels: np.ndarray, an: Analysis, params: dict, region_type: dic
     total = int(an.s.res_nheavy[lab > 0].sum())
     thr = int(p["min_heavy"])
     eff = min(thr, max(total // 3, 1))
-    if eff < thr:
+    if eff < thr and total > 0:
         notes.append(
             f"The protein has only {total} heavy atoms in structured parts, so the minimum region size was "
             f"lowered from {thr} to {eff} heavy atoms to keep at least 2-3 regions."

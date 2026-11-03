@@ -92,12 +92,12 @@ def detect_membrane(s: System) -> Membrane | None:
                 L = s.box[axis - 1]
                 d = d - L * np.round(d / L)
             lo, hi, score = _two_layers(d)
-            cand = Membrane(axis, lo + ref[axis - 1], hi + ref[axis - 1], "lipids", score, n_lip)
-            if axis == 3 and score > 4.0 and 25.0 < hi - lo < 60.0:
+            cand = Membrane(axis, float(lo + ref[axis - 1]), float(hi + ref[axis - 1]), "lipids", float(score), n_lip)
+            if axis == 3 and score > 8.0 and 25.0 < hi - lo < 60.0:
                 return cand
             if best is None or score > best.score:
                 best = cand
-        if best is not None and best.score > 4.0 and 20.0 < best.thickness < 70.0:
+        if best is not None and best.score > 6.0 and 20.0 < best.thickness < 70.0:
             return best
         return None
     dum = [a for r in s.residues if r.kind == "dummy" for a in range(r.start, r.stop)]
@@ -136,7 +136,7 @@ class Bath:
     def contiguity(self, s: System) -> list[dict]:
         """Problems with the Amber 'one contiguous atom range' rule, with advice."""
         out = []
-        for name, atoms, res in (
+        for name, atoms, _res in (
             ("solvent", self.solvent_atoms, self.solvent_residues),
             ("membrane", self.membrane_atoms, self.membrane_residues),
         ):

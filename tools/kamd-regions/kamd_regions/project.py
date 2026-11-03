@@ -20,9 +20,26 @@ PROJECT_VERSION = 1
 # then tab20 for groups 8+.
 OKABE_ITO = ["#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7"]
 TAB20 = [
-    "#1f77b4", "#aec7e8", "#ff7f0e", "#ffbb78", "#2ca02c", "#98df8a", "#d62728", "#ff9896",
-    "#9467bd", "#c5b0d5", "#8c564b", "#c49c94", "#e377c2", "#f7b6d2", "#7f7f7f", "#c7c7c7",
-    "#bcbd22", "#dbdb8d", "#17becf", "#9edae5",
+    "#1f77b4",
+    "#aec7e8",
+    "#ff7f0e",
+    "#ffbb78",
+    "#2ca02c",
+    "#98df8a",
+    "#d62728",
+    "#ff9896",
+    "#9467bd",
+    "#c5b0d5",
+    "#8c564b",
+    "#c49c94",
+    "#e377c2",
+    "#f7b6d2",
+    "#7f7f7f",
+    "#c7c7c7",
+    "#bcbd22",
+    "#dbdb8d",
+    "#17becf",
+    "#9edae5",
 ]
 PALETTE = OKABE_ITO + TAB20
 UNASSIGNED_COLOR = "#C8C8C8"
@@ -90,8 +107,9 @@ class Project:
         return {r.id: i + 1 for i, r in enumerate(self.regions)}
 
     @classmethod
-    def from_labels(cls, labels: np.ndarray, region_type: dict | None = None, names: list[str] | None = None,
-                    **kw) -> Project:
+    def from_labels(
+        cls, labels: np.ndarray, region_type: dict | None = None, names: list[str] | None = None, **kw
+    ) -> Project:
         labels = np.asarray(labels, dtype=np.int64)
         ids = [int(x) for x in np.unique(labels[labels > 0])]
         # order regions by their first residue
@@ -127,8 +145,9 @@ class Project:
         a = d.get("assignment")
         assignment = rle_decode(a, n) if isinstance(a, list) and (not a or isinstance(a[0], list)) else np.asarray(a)
         st = Settings(**{k: v for k, v in d.get("settings", {}).items() if k in Settings.__dataclass_fields__})
-        regions = [Region(**{k: v for k, v in r.items() if k in Region.__dataclass_fields__})
-                   for r in d.get("regions", [])]
+        regions = [
+            Region(**{k: v for k, v in r.items() if k in Region.__dataclass_fields__}) for r in d.get("regions", [])
+        ]
         return cls(
             n_residues=n,
             regions=regions,

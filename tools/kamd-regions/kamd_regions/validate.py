@@ -66,60 +66,91 @@ def validate(an: Analysis, project: Project, engines=ENGINES) -> dict:
     if len(nonempty) < 2:
         err("too_few_groups", f"KAMD needs at least 2 reference groups; {len(nonempty)} defined")
     if len(regions) > AMBER_MAX_GROUPS:
-        err("too_many_groups", f"Amber allows at most {AMBER_MAX_GROUPS} groups; {len(regions)} defined",
-            eng=("amber",))
+        err(
+            "too_many_groups", f"Amber allows at most {AMBER_MAX_GROUPS} groups; {len(regions)} defined", eng=("amber",)
+        )
 
     bad = np.flatnonzero((project.assignment > 0) & ~an.assignable)
     if bad.size:
-        err("bath_in_group", f"{bad.size} water/ion/lipid residues are assigned to a group (e.g. "
-            f"{s.residues[int(bad[0])].label()}); groups and bath must not overlap")
+        err(
+            "bath_in_group",
+            f"{bad.size} water/ion/lipid residues are assigned to a group (e.g. "
+            f"{s.residues[int(bad[0])].label()}); groups and bath must not overlap",
+        )
     unknown = set(np.unique(project.assignment[project.assignment > 0]).tolist()) - {r.id for r in regions}
     if unknown:
         err("unknown_region", f"residues assigned to unknown region ids {sorted(unknown)}")
 
-    # sizes
+    # sizes (a structure without hydrogens is counted as ~2x its heavy atoms)
+    no_h = bool(an.assignable.any()) and not (~s.heavy[s.atoms_of(np.flatnonzero(an.assignable))]).any()
     for r in nonempty:
-        n = stats[r.id]["n_atoms"]
+        n = stats[r.id]["n_atoms"] if not no_h else 2 * stats[r.id]["n_heavy"]
+        est = " (estimated with hydrogens)" if no_h else ""
         if n < st.small_atoms:
-            warn("small_group", f"{r.name} has only {n} atoms; resets of small groups are noisy "
-                 f"(a few hundred to a few thousand atoms is typical)", region=r.id)
+            warn(
+                "small_group",
+                f"{r.name} has only {n} atoms{est}; resets of small groups are noisy "
+                f"(a few hundred to a few thousand atoms is typical)",
+                region=r.id,
+            )
         if n > st.large_atoms:
-            warn("large_group", f"{r.name} has {n} atoms; very large groups average out relative motion",
-                 region=r.id)
+            warn(
+                "large_group",
+                f"{r.name} has {n} atoms{est}; very large groups average out relative motion",
+                region=r.id,
+            )
 
     # bath
     bath = an.bath
     if bath.solvent_atoms.size == 0:
-        err("no_solvent", "no water or ions found: the solvent bath is required. Load the solvated system "
-            "(prmtop + coordinates, or the solvated PDB/gro).", eng=("gromacs", "openmm"))
-        warn("no_solvent_amber", "no water or ions in this structure: the Amber input uses the placeholder "
-             "solvent_mask = \":WAT,Na+,Cl-\"; check it against your prmtop", eng=("amber",))
+        err(
+            "no_solvent",
+            "no water or ions found: the solvent bath is required. Load the solvated system "
+            "(prmtop + coordinates, or the solvated PDB/gro).",
+            eng=("gromacs", "openmm"),
+        )
+        warn(
+            "no_solvent_amber",
+            "no water or ions in this structure: the Amber input uses the placeholder "
+            'solvent_mask = ":WAT,Na+,Cl-"; check it against your prmtop',
+            eng=("amber",),
+        )
     has_tm = any(r.region_type == 2 for r in nonempty)
     mem = effective_membrane(an, project)
     if has_tm:
         if bath.membrane_atoms.size == 0:
-            err("no_membrane_bath", "transmembrane groups (region_type 2) need a membrane bath, but the system "
-                "has no lipid residues" + (" (the OPM slab is used only for the suggestion)" if mem else ""))
+            err(
+                "no_membrane_bath",
+                "transmembrane groups (region_type 2) need a membrane bath, but the system "
+                "has no lipid residues" + (" (the OPM slab is used only for the suggestion)" if mem else ""),
+            )
         if mem is None:
-            err("no_membrane_axis", "transmembrane groups need membrane_axis, but no membrane was found; set the "
-                "slab manually")
+            err(
+                "no_membrane_axis",
+                "transmembrane groups need membrane_axis, but no membrane was found; set the slab manually",
+            )
     for problem in bath.contiguity(s):
         if problem["bath"] == "membrane" and not has_tm:
             continue
         err(f"{problem['bath']}_not_contiguous", problem["message"], eng=("amber",))
-    if bath.membrane_atoms.size and bath.solvent_atoms.size:
-        pass  # disjoint by construction (residue kinds)
 
     # membrane placement
     if mem is not None:
         for r in nonempty:
             f = stats[r.id]["frac_in_slab"]
             if r.region_type == 2 and f is not None and f < 0.5:
-                warn("tm_outside", f"{r.name} is transmembrane but only {f:.0%} of its residues lie in the "
-                     "membrane slab", region=r.id)
+                warn(
+                    "tm_outside",
+                    f"{r.name} is transmembrane but only {f:.0%} of its residues lie in the membrane slab",
+                    region=r.id,
+                )
             if r.region_type == 1 and f is not None and f > 0.6 and bath.membrane_atoms.size:
-                warn("solution_in_membrane", f"{r.name} is a solution group but {f:.0%} of its residues are buried "
-                     "in the membrane; consider region_type 2", region=r.id)
+                warn(
+                    "solution_in_membrane",
+                    f"{r.name} is a solution group but {f:.0%} of its residues are buried "
+                    "in the membrane; consider region_type 2",
+                    region=r.id,
+                )
 
     # refer_link
     pos = project.group_position()
@@ -134,21 +165,29 @@ def validate(an: Analysis, project: Project, engines=ENGINES) -> dict:
         targets = {k for k in links.values() if k in ids}
         free = [r.id for r in nonempty if r.id not in links]
         if len(targets) == 1 and len(free) <= 1:
-            warn("all_linked", "every group shares one direction through refer_link: the reset then pushes "
-                 "all groups the same way and no relative motion is excited")
+            warn(
+                "all_linked",
+                "every group shares one direction through refer_link: the reset then pushes "
+                "all groups the same way and no relative motion is excited",
+            )
         for rid, k in links.items():
             if k in links and k in ids:
-                warn("link_chain", f"{project.region(rid).name} links to {project.region(k).name}, which itself "
-                     "links to another group; KAMD applies links in group order, so the result depends on order",
-                     region=rid)
-        if len(targets) == 1 and len(links) == 1 and len(nonempty) > 2:
-            pass
+                warn(
+                    "link_chain",
+                    f"{project.region(rid).name} links to {project.region(k).name}, which itself "
+                    "links to another group; KAMD applies links in group order, so the result depends on order",
+                    region=rid,
+                )
 
     # numbering
     if not s.has_topology:
-        warn("no_topology", "No topology loaded: residue numbers come from the structure file order. The Amber "
-             "masks may not match your prmtop (and atom numbers may not match a GROMACS .tpr). Load the "
-             "prmtop/top/tpr for exact export.", eng=("amber", "gromacs", "openmm"))
+        warn(
+            "no_topology",
+            "No topology loaded: residue numbers come from the structure file order. The Amber "
+            "masks may not match your prmtop (and atom numbers may not match a GROMACS .tpr). Load the "
+            "prmtop/top/tpr for exact export.",
+            eng=("amber", "gromacs", "openmm"),
+        )
 
     ok = {e: not any(e in x["engines"] for x in errors) for e in engines}
     return {

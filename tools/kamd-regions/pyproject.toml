@@ -53,6 +53,9 @@ extend-exclude = ["frontend"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "B", "UP", "I"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Body"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["kamd_regions"]
 

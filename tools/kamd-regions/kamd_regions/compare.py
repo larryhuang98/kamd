@@ -48,16 +48,28 @@ def compare(session, manual, auto) -> dict:
                 best = (q, inter, union)
         cov = best[1] / atoms if best else 0.0
         jac = best[1] / best[2] if best else 0.0
-        rows.append({
-            "manual": r.name, "summary": residue_summary(s, res), "atoms": atoms,
-            "best": best[0].name if best else "(unassigned)", "covered": cov, "jaccard": jac,
-            "unassigned": int(s.res_natoms[res[x[res] == 0]].sum()),
-        })
+        rows.append(
+            {
+                "manual": r.name,
+                "summary": residue_summary(s, res),
+                "atoms": atoms,
+                "best": best[0].name if best else "(unassigned)",
+                "covered": cov,
+                "jaccard": jac,
+                "unassigned": int(s.res_natoms[res[x[res] == 0]].sum()),
+            }
+        )
     auto_rows = []
     for q in auto.regions:
         rq = auto.residues_of(q.id)
-        auto_rows.append({"name": q.name, "summary": residue_summary(s, rq), "atoms": int(s.res_natoms[rq].sum()),
-                          "type": q.region_type})
+        auto_rows.append(
+            {
+                "name": q.name,
+                "summary": residue_summary(s, rq),
+                "atoms": int(s.res_natoms[rq].sum()),
+                "type": q.region_type,
+            }
+        )
     both = (m[poly] > 0) | (x[poly] > 0)
     return {
         "rows": rows,
@@ -93,8 +105,13 @@ def compare_report(session, methods, params=None) -> str:
     for r in manual.regions:
         res = manual.residues_of(r.id)
         lines.append(f"| {r.name} | {residue_summary(s, res)} | {int(s.res_natoms[res].sum())} |")
-    lines += ["", "Sequence view (one character per residue; `.` = unassigned):", "", "```",
-              f"{'manual':>9s}  {_bar(manual, s, poly)}"]
+    lines += [
+        "",
+        "Sequence view (one character per residue; `.` = unassigned):",
+        "",
+        "```",
+        f"{'manual':>9s}  {_bar(manual, s, poly)}",
+    ]
     results = []
     for meth in methods:
         auto, notes = session.suggest(meth, params or {})
@@ -121,8 +138,10 @@ def compare_report(session, methods, params=None) -> str:
             "|---|---|---|---|---|---|",
         ]
         for r in c["rows"]:
-            lines.append(f"| {r['manual']} | {r['atoms']} | {r['best']} | {r['covered']:.0%} | {r['jaccard']:.2f} | "
-                         f"{r['unassigned']} |")
+            lines.append(
+                f"| {r['manual']} | {r['atoms']} | {r['best']} | {r['covered']:.0%} | {r['jaccard']:.2f} | "
+                f"{r['unassigned']} |"
+            )
         if notes:
             lines += ["", "Notes: " + " ".join(notes)]
         lines.append("")

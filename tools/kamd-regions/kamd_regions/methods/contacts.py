@@ -57,8 +57,9 @@ def suggest(an: Analysis, params: dict) -> tuple[np.ndarray, dict]:
         g = nx.Graph()
         g.add_nodes_from(range(len(poly)))
         g.add_weighted_edges_from((a, b, x) for (a, b), x in w.items())
-        comms = nx.community.louvain_communities(g, weight="weight", resolution=float(p["resolution"]),
-                                                 seed=int(p["seed"]))
+        comms = nx.community.louvain_communities(
+            g, weight="weight", resolution=float(p["resolution"]), seed=int(p["seed"])
+        )
         memb = np.zeros(len(poly), dtype=np.int64)
         for i, c in enumerate(comms):
             memb[list(c)] = i

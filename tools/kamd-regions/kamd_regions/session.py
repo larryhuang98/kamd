@@ -55,14 +55,16 @@ class Session:
         st = settings or (self.project.settings if hasattr(self, "project") else Settings())
         saved = self.an.membrane
         if st.membrane:
-            self.an.membrane = Membrane(int(st.membrane["axis"]), float(st.membrane["lo"]),
-                                        float(st.membrane["hi"]), "manual")
+            self.an.membrane = Membrane(
+                int(st.membrane["axis"]), float(st.membrane["lo"]), float(st.membrane["hi"]), "manual"
+            )
         try:
             res = run_suggest(self.an, method, params)
         finally:
             self.an.membrane = saved
-        p = Project.from_labels(res["labels"], res["region_type"], names=[r.name for r in self.system.residues],
-                                settings=st)
+        p = Project.from_labels(
+            res["labels"], res["region_type"], names=[r.name for r in self.system.residues], settings=st
+        )
         if self.an.membrane is not None and any(r.region_type == 2 for r in p.regions):
             for r in p.regions:
                 r.name = ("TM " if r.region_type == 2 else "sol ") + r.name.split()[-1]
@@ -144,8 +146,9 @@ class Session:
         p = self.project_from(d)
         return validate(self.an, p)
 
-    def export(self, d: dict | None, engines=("amber", "gromacs", "openmm"), out_dir: str | None = None,
-               force: bool = False) -> dict:
+    def export(
+        self, d: dict | None, engines=("amber", "gromacs", "openmm"), out_dir: str | None = None, force: bool = False
+    ) -> dict:
         p = self.project_from(d)
         p.inputs = dict(self.system.files)
         v = validate(self.an, p, engines)
