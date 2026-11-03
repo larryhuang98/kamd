@@ -16,7 +16,9 @@ from .session import Session
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(session: Session | None, default_out: str | None = None, desktop: bool = False) -> FastAPI:
+def create_app(
+    session: Session | None, default_out: str | None = None, desktop: bool = False, startup_error: str | None = None
+) -> FastAPI:
     """`session` may be None: the GUI then shows its start screen and opens files via /api/open."""
     app = FastAPI(title="kamd-regions", docs_url="/api/docs")
     state = {"session": session, "out": default_out or str(Path.cwd() / "kamd_regions_out")}
@@ -37,6 +39,7 @@ def create_app(session: Session | None, default_out: str | None = None, desktop:
             "loaded": state["session"] is not None,
             "recent": recent_files(),
             "out_dir": state["out"],
+            "error": startup_error,
         }
 
     @app.post("/api/open")

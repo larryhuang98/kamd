@@ -26,6 +26,7 @@ export interface AppInfo {
   loaded: boolean;
   recent: string[][];
   out_dir: string;
+  error?: string | null; // a file given on the command line could not be opened
 }
 
 const live = {

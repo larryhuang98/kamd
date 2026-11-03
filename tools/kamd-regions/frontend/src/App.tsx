@@ -75,6 +75,7 @@ export default function App() {
       .app()
       .then((info) => {
         setAppInfo(info);
+        if (info.error) setOpenError(info.error);
         if (info.loaded) loadSession();
       })
       .catch((e) => setError(String(e)));

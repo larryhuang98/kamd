@@ -146,12 +146,17 @@ def run(
     from .session import Session
 
     session = None
+    startup_error = None
     if files:
-        session = Session(files, method)
-        add_recent(files)
-        if out_dir is None:
-            out_dir = str(Path(files[0]).resolve().parent / "kamd_regions_out")
-    app = create_app(session, out_dir, desktop=True)
+        try:
+            session = Session(files, method)
+            add_recent(files)
+            if out_dir is None:
+                out_dir = str(Path(files[0]).resolve().parent / "kamd_regions_out")
+        except Exception as exc:  # show the start screen with the reason instead of quitting
+            startup_error = f"could not open {' '.join(Path(f).name for f in files)}: {exc}"
+            _say(startup_error)
+    app = create_app(session, out_dir, desktop=True, startup_error=startup_error)
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     th = threading.Thread(target=server.run, daemon=True)

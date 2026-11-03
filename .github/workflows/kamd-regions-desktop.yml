@@ -60,19 +60,26 @@ jobs:
         env:
           KAMD_REGIONS_CONFIG: ${{ runner.temp }}/kamd-cfg
           QTWEBENGINE_CHROMIUM_FLAGS: --no-sandbox --disable-gpu
+        shell: python
         run: |
-          T="$GITHUB_WORKSPACE/amber/test"
-          case "$RUNNER_OS" in
-            Linux)   APP="dist/KAMD Regions/kamd-regions-app"; RUN="xvfb-run -a -s '-screen 0 1600x1000x24'" ;;
-            macOS)   APP="dist/KAMD Regions.app/Contents/MacOS/kamd-regions-app"; RUN="" ;;
-            Windows) APP="dist/KAMD Regions/kamd-regions-app.exe"; RUN="" ;;
-          esac
-          eval timeout 300 $RUN "\"$APP\"" "$T/prmtop" "$T/restrt" "$T/md_test.in" --selftest "$PWD/selftest.json" || true
-          echo "--- app log"; cat "$KAMD_REGIONS_CONFIG/kamd-regions.log" || true
-          cat selftest.json
-          grep -q '"ok": true' selftest.json
-          grep -q '"screen": "main"' selftest.json
-          grep -q '"regions": 4' selftest.json
+          # start the built app on the Amber test system and check what the window shows
+          import json, os, pathlib, subprocess, sys
+          test = pathlib.Path(os.environ["GITHUB_WORKSPACE"]) / "amber" / "test"
+          app = {"Linux": ["xvfb-run", "-a", "-s", "-screen 0 1600x1000x24", "dist/KAMD Regions/kamd-regions-app"],
+                 "macOS": ["dist/KAMD Regions.app/Contents/MacOS/kamd-regions-app"],
+                 "Windows": [r"dist\KAMD Regions\kamd-regions-app.exe"]}[os.environ["RUNNER_OS"]]
+          out = pathlib.Path("selftest.json").resolve()
+          cmd = app + [str(test / "prmtop"), str(test / "restrt"), str(test / "md_test.in"), "--selftest", str(out)]
+          try:
+              subprocess.run(cmd, timeout=300)
+          except subprocess.TimeoutExpired:
+              print("the app did not finish within 300 s")
+          log = pathlib.Path(os.environ["KAMD_REGIONS_CONFIG"]) / "kamd-regions.log"
+          print("--- app log"); print(log.read_text() if log.exists() else "(none)")
+          r = json.loads(out.read_text()) if out.exists() else {}
+          print("--- result", r)
+          st = r.get("state") or {}
+          sys.exit(0 if r.get("ok") and st.get("screen") == "main" and st.get("regions") == 4 else 1)
       - name: package
         working-directory: tools/kamd-regions/packaging/dist
         run: |
