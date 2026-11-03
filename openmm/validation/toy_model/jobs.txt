@@ -1,0 +1,52 @@
+python3 run_toy.py --mode plain  --seed 1 --ns 2.5 --out runs/plain_s1.npz
+python3 run_toy.py --mode kamd   --seed 1 --ns 2.5 --out runs/kamd_def_s1.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 1 --ns 2.5 --out runs/kamd_freq_s1.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 1 --ns 2.5 --out runs/mbonly_s1.npz
+python3 run_toy.py --mode plain  --seed 2 --ns 2.5 --out runs/plain_s2.npz
+python3 run_toy.py --mode kamd   --seed 2 --ns 2.5 --out runs/kamd_def_s2.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 2 --ns 2.5 --out runs/kamd_freq_s2.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 2 --ns 2.5 --out runs/mbonly_s2.npz
+python3 run_toy.py --mode plain  --seed 3 --ns 2.5 --out runs/plain_s3.npz
+python3 run_toy.py --mode kamd   --seed 3 --ns 2.5 --out runs/kamd_def_s3.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 3 --ns 2.5 --out runs/kamd_freq_s3.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 3 --ns 2.5 --out runs/mbonly_s3.npz
+python3 run_toy.py --mode plain  --seed 4 --ns 2.5 --out runs/plain_s4.npz
+python3 run_toy.py --mode kamd   --seed 4 --ns 2.5 --out runs/kamd_def_s4.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 4 --ns 2.5 --out runs/kamd_freq_s4.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 4 --ns 2.5 --out runs/mbonly_s4.npz
+python3 run_toy.py --mode plain  --seed 5 --ns 2.5 --out runs/plain_s5.npz
+python3 run_toy.py --mode kamd   --seed 5 --ns 2.5 --out runs/kamd_def_s5.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 5 --ns 2.5 --out runs/kamd_freq_s5.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 5 --ns 2.5 --out runs/mbonly_s5.npz
+python3 run_toy.py --mode plain  --seed 6 --ns 2.5 --out runs/plain_s6.npz
+python3 run_toy.py --mode kamd   --seed 6 --ns 2.5 --out runs/kamd_def_s6.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 6 --ns 2.5 --out runs/kamd_freq_s6.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 6 --ns 2.5 --out runs/mbonly_s6.npz
+python3 run_toy.py --mode plain  --seed 7 --ns 2.5 --out runs/plain_s7.npz
+python3 run_toy.py --mode kamd   --seed 7 --ns 2.5 --out runs/kamd_def_s7.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 7 --ns 2.5 --out runs/kamd_freq_s7.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 7 --ns 2.5 --out runs/mbonly_s7.npz
+python3 run_toy.py --mode plain  --seed 8 --ns 2.5 --out runs/plain_s8.npz
+python3 run_toy.py --mode kamd   --seed 8 --ns 2.5 --out runs/kamd_def_s8.npz
+python3 run_toy.py --mode kamd   --pbd 20 --nz 1 --seed 8 --ns 2.5 --out runs/kamd_freq_s8.npz
+python3 run_toy.py --mode mbonly --pbd 20 --nz 1 --seed 8 --ns 2.5 --out runs/mbonly_s8.npz
+python3 run_toy.py --mode plain --friction 0.1 --seed 1 --ns 1.2 --out runs/plain_g0.1_s1.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 0.1 --seed 1 --ns 1.2 --out runs/kamd_freq_g0.1_s1.npz
+python3 run_toy.py --mode plain --friction 10 --seed 1 --ns 1.2 --out runs/plain_g10_s1.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 10 --seed 1 --ns 1.2 --out runs/kamd_freq_g10_s1.npz
+python3 run_toy.py --mode sepmon --pbd 20 --nz 1 --seed 1 --ns 1.2 --out runs/sepmon_freq_s1.npz
+python3 run_toy.py --mode plain --friction 0.1 --seed 2 --ns 1.2 --out runs/plain_g0.1_s2.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 0.1 --seed 2 --ns 1.2 --out runs/kamd_freq_g0.1_s2.npz
+python3 run_toy.py --mode plain --friction 10 --seed 2 --ns 1.2 --out runs/plain_g10_s2.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 10 --seed 2 --ns 1.2 --out runs/kamd_freq_g10_s2.npz
+python3 run_toy.py --mode sepmon --pbd 20 --nz 1 --seed 2 --ns 1.2 --out runs/sepmon_freq_s2.npz
+python3 run_toy.py --mode plain --friction 0.1 --seed 3 --ns 1.2 --out runs/plain_g0.1_s3.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 0.1 --seed 3 --ns 1.2 --out runs/kamd_freq_g0.1_s3.npz
+python3 run_toy.py --mode plain --friction 10 --seed 3 --ns 1.2 --out runs/plain_g10_s3.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 10 --seed 3 --ns 1.2 --out runs/kamd_freq_g10_s3.npz
+python3 run_toy.py --mode sepmon --pbd 20 --nz 1 --seed 3 --ns 1.2 --out runs/sepmon_freq_s3.npz
+python3 run_toy.py --mode plain --friction 0.1 --seed 4 --ns 1.2 --out runs/plain_g0.1_s4.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 0.1 --seed 4 --ns 1.2 --out runs/kamd_freq_g0.1_s4.npz
+python3 run_toy.py --mode plain --friction 10 --seed 4 --ns 1.2 --out runs/plain_g10_s4.npz
+python3 run_toy.py --mode kamd --pbd 20 --nz 1 --friction 10 --seed 4 --ns 1.2 --out runs/kamd_freq_g10_s4.npz
+python3 run_toy.py --mode sepmon --pbd 20 --nz 1 --seed 4 --ns 1.2 --out runs/sepmon_freq_s4.npz

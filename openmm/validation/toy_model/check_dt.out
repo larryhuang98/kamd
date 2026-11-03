@@ -1,0 +1,3 @@
+dt 2.0 fs: NVE drift -1.711e-02 kT/particle/ns, E fluct sd 4.70e-04 kT/particle
+dt 4.0 fs: NVE drift -3.993e-04 kT/particle/ns, E fluct sd 5.36e-04 kT/particle
+dt 5.0 fs: NVE drift -3.043e-02 kT/particle/ns, E fluct sd 5.59e-04 kT/particle
