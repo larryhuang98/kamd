@@ -185,8 +185,12 @@ def run(
     result = {"ok": False}
 
     def check():
-        # wait for the page to report itself ready, print what it shows, close
-        deadline = time.time() + 60
+        # wait for the page to report itself ready, print what it shows, close.
+        # evaluate_js before the web view has loaded can block forever (WebView2), so wait first
+        loaded = getattr(getattr(window, "events", None), "loaded", None)
+        if loaded is not None:
+            loaded.wait(90)
+        deadline = time.time() + 90
         state = None
         while time.time() < deadline:
             try:
@@ -219,8 +223,30 @@ def run(
     return 0 if (not selftest or result["ok"]) else 1
 
 
+def _log_path() -> Path:
+    from .recent import _path
+
+    return _path().parent / "kamd-regions.log"
+
+
 def main() -> int:  # entry point of the frozen app (PyInstaller)
     import argparse
+    import faulthandler
+    import logging
+
+    # a windowed app has no console: send output and errors to a log file
+    log = _log_path()
+    try:
+        log.parent.mkdir(parents=True, exist_ok=True)
+        fh = open(log, "w", buffering=1, encoding="utf-8")  # noqa: SIM115 - lives for the whole run
+        if sys.stdout is None:
+            sys.stdout = fh
+        if sys.stderr is None:
+            sys.stderr = fh
+        faulthandler.enable(fh)
+        logging.basicConfig(stream=fh, level=logging.INFO)
+    except OSError:
+        pass
 
     ap = argparse.ArgumentParser(prog="KAMD Regions")
     ap.add_argument("files", nargs="*")

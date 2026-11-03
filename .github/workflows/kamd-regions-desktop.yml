@@ -24,6 +24,7 @@ jobs:
           - os: windows-2022
             name: windows-x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     defaults:
       run:
         shell: bash
@@ -54,6 +55,7 @@ jobs:
         working-directory: tools/kamd-regions/packaging
         run: pyinstaller --noconfirm --log-level WARN kamd-regions.spec
       - name: self-test the built app
+        timeout-minutes: 8
         working-directory: tools/kamd-regions/packaging
         env:
           KAMD_REGIONS_CONFIG: ${{ runner.temp }}/kamd-cfg
@@ -65,7 +67,8 @@ jobs:
             macOS)   APP="dist/KAMD Regions.app/Contents/MacOS/kamd-regions-app"; RUN="" ;;
             Windows) APP="dist/KAMD Regions/kamd-regions-app.exe"; RUN="" ;;
           esac
-          eval $RUN "\"$APP\"" "$T/prmtop" "$T/restrt" "$T/md_test.in" --selftest "$PWD/selftest.json" || true
+          eval timeout 300 $RUN "\"$APP\"" "$T/prmtop" "$T/restrt" "$T/md_test.in" --selftest "$PWD/selftest.json" || true
+          echo "--- app log"; cat "$KAMD_REGIONS_CONFIG/kamd-regions.log" || true
           cat selftest.json
           grep -q '"ok": true' selftest.json
           grep -q '"screen": "main"' selftest.json
