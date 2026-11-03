@@ -30,10 +30,12 @@ def cmd_serve(a) -> int:
     from .server import create_app
     from .session import Session
 
-    print("loading", " ".join(a.files), "...", flush=True)
-    s = Session(a.files, a.method, _params(a.param))
-    for n in s.notes:
-        print("note:", n)
+    s = None
+    if a.files:
+        print("loading", " ".join(a.files), "...", flush=True)
+        s = Session(a.files, a.method, _params(a.param))
+        for n in s.notes:
+            print("note:", n)
     app = create_app(s, a.out_dir)
     url = f"http://{a.host}:{a.port}/"
     print(f"kamd-regions GUI at {url}  (Ctrl+C to stop)", flush=True)
@@ -48,6 +50,12 @@ def _print_validation(v: dict) -> None:
         print(f"ERROR   [{','.join(e['engines'])}] {e['message']}")
     for w in v["warnings"]:
         print(f"warning [{','.join(w['engines'])}] {w['message']}")
+
+
+def cmd_app(a) -> int:
+    from .desktop import run
+
+    return run(a.files or None, a.method, a.out_dir, selftest=a.selftest, debug=a.debug)
 
 
 def cmd_suggest(a) -> int:
@@ -175,8 +183,8 @@ def main(argv=None) -> int:
         "optionally an existing &kamd mdin, kamd.dat + index.ndx, or a project.json"
     )
 
-    p = sub.add_parser("serve", help="start the GUI")
-    p.add_argument("files", nargs="+", help=files_help)
+    p = sub.add_parser("serve", help="start the GUI in the web browser")
+    p.add_argument("files", nargs="*", help=files_help + " (optional: open files from the start screen)")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--no-browser", action="store_true")
@@ -184,6 +192,14 @@ def main(argv=None) -> int:
     p.add_argument("--param", action="append", help="method parameter key=value (repeatable)")
     p.add_argument("--out-dir", default=None, help="where 'save'/'export to disk' write (default ./kamd_regions_out)")
     p.set_defaults(fn=cmd_serve)
+
+    p = sub.add_parser("app", help="start the desktop application (native window)")
+    p.add_argument("files", nargs="*", help=files_help + " (optional: open files from the start screen)")
+    p.add_argument("--method", default="auto")
+    p.add_argument("--out-dir", default=None)
+    p.add_argument("--selftest", nargs="?", const="-", default=None, help=argparse.SUPPRESS)
+    p.add_argument("--debug", action="store_true", help="enable the web inspector")
+    p.set_defaults(fn=cmd_app)
 
     p = sub.add_parser("suggest", help="suggest regions without the GUI")
     p.add_argument("files", nargs="+", help=files_help)

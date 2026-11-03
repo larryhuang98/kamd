@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 const AMBER = "http://127.0.0.1:8799/";
 const VDAC = "http://127.0.0.1:8798/";
@@ -115,4 +116,20 @@ test("membrane protein: tm groups and slab", async ({ page }) => {
     await page.screenshot({ path: SHOTS + "vdac_tm_dark.png" });
     await page.locator("header button[title='toggle theme']").click();
   }
+});
+
+test("start screen: open a system by path", async ({ page }) => {
+  await page.goto("http://127.0.0.1:8797/");
+  await expect(page.getByTestId("start-screen")).toBeVisible();
+  await page.getByTestId("paths").fill("/no/such/file.pdb");
+  await page.getByTestId("open-paths").click();
+  await expect(page.getByTestId("open-error")).toContainText("not found");
+  const pdb = resolve("../tests/data/t4l.pdb");
+  await page.getByTestId("paths").fill(pdb);
+  await page.getByTestId("open-paths").click();
+  await ready(page);
+  await expect(page.locator(".region-list .region")).toHaveCount(2);
+  // "Open..." returns to the start screen, which now lists the file as recent
+  await page.getByTestId("open-other").click();
+  await expect(page.getByTestId("start-screen")).toContainText("t4l.pdb");
 });

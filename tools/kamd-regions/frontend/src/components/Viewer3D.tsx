@@ -23,10 +23,19 @@ export function Viewer3D(p: Props) {
   const [ions, setIons] = useState(false);
   const [slab, setSlab] = useState(true);
   const bg = p.dark ? "#16171a" : "#ffffff";
+  const [failed, setFailed] = useState<string | null>(null);
 
   useEffect(() => {
     if (!el.current) return;
-    const v = new ThreeDmolViewer(el.current, bg);
+    let v: ThreeDmolViewer;
+    try {
+      v = new ThreeDmolViewer(el.current, bg);
+    } catch (e) {
+      // no WebGL (old driver, remote desktop, VM): keep the rest of the program working
+      setFailed(String(e).replace(/^Error: /, ""));
+      (window as any).__kamdViewerReady = true;
+      return;
+    }
     viewer.current = v;
     const ro = new ResizeObserver(() => v.resize());
     ro.observe(el.current);
@@ -97,7 +106,15 @@ export function Viewer3D(p: Props) {
         <button className="ghost" onClick={() => viewer.current?.zoomTo(p.selected.size ? [...p.selected] : undefined)}>zoom</button>
         <span className="hover-label" data-testid="hover-label">{p.hoverLabel ?? ""}</span>
       </div>
-      <div ref={el} className="viewer" data-testid="viewer" />
+      <div ref={el} className="viewer" data-testid="viewer">
+        {failed && (
+          <div className="viewer-failed" data-testid="viewer-failed">
+            <b>3D view unavailable</b>
+            <span>{failed}. The sequence bar, regions, validation and export still work.</span>
+            <span className="muted small">Update the graphics driver, or open the same session in a web browser with kamd-regions serve.</span>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

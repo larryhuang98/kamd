@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { bridge, saveText } from "../desktop";
 import type { ExportResult, Settings, SystemInfo, Validation } from "../types";
 
 interface Props {
@@ -7,20 +8,13 @@ interface Props {
   settings: Settings;
   onSettings: (p: Partial<Settings>) => void;
   onExport: (engines: string[]) => Promise<ExportResult | null>;
+  onExportFolder?: (engines: string[]) => Promise<ExportResult | null>; // desktop app only
   onSave: () => void;
   onLoadFile: (f: File) => void;
   onImport: (files: FileList) => void;
   outDir: string;
 }
 
-function download(name: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: "text/plain" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
 
 export function BottomBar(p: Props) {
   const [engines, setEngines] = useState<string[]>(["amber", "gromacs", "openmm"]);
@@ -80,14 +74,27 @@ export function BottomBar(p: Props) {
           >
             Export
           </button>
+          {p.onExportFolder && (
+            <button
+              id="export-folder"
+              disabled={!v || blocking.length > 0 || !engines.length}
+              title={blocking.length ? "fix the errors first" : "write all files into a folder and verify them"}
+              onClick={async () => {
+                const r = await p.onExportFolder!(engines);
+                if (r) setResult(r);
+              }}
+            >
+              Export to folder…
+            </button>
+          )}
           <button onClick={p.onSave} data-testid="save">Save project</button>
           <label className="filebtn">
             Load project
-            <input type="file" accept=".json" onChange={(e) => e.target.files?.[0] && p.onLoadFile(e.target.files[0])} />
+            <input id="load-project" type="file" accept=".json" onChange={(e) => e.target.files?.[0] && p.onLoadFile(e.target.files[0])} />
           </label>
           <label className="filebtn" title="&kamd mdin, or kamd.dat + index.ndx, or kamd_openmm.json">
             Import KAMD input
-            <input type="file" multiple onChange={(e) => e.target.files && p.onImport(e.target.files)} data-testid="import" />
+            <input id="import-input" type="file" multiple onChange={(e) => e.target.files && p.onImport(e.target.files)} data-testid="import" />
           </label>
           <button className="ghost" onClick={() => setShowSettings((x) => !x)}>KAMD settings</button>
         </div>
@@ -144,9 +151,19 @@ export function BottomBar(p: Props) {
                 )}
               </div>
             )}
+            {result.written && result.written.length > 0 && (
+              <div className="row small">
+                <span className="ok">wrote {result.written.length} files to {result.written[0].replace(/[\\/][^\\/]+$/, "")}</span>
+                {bridge() && (
+                  <button className="link" onClick={() => bridge()!.reveal(result.written![0])}>
+                    Show in folder
+                  </button>
+                )}
+              </div>
+            )}
             <div className="files">
               {Object.keys(result.files).map((f) => (
-                <button key={f} className="link" onClick={() => download(f, result.files[f])} data-testid={`file-${f}`}>
+                <button key={f} className="link" onClick={() => saveText(f, result.files[f])} data-testid={`file-${f}`}>
                   ⬇ {f}
                 </button>
               ))}
@@ -160,4 +177,3 @@ export function BottomBar(p: Props) {
   );
 }
 
-export { download };

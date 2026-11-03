@@ -21,7 +21,9 @@ export class ThreeDmolViewer implements MolViewer {
   private surfaceTimer: number | undefined;
 
   constructor(el: HTMLElement, background: string) {
+    if (!webglAvailable()) throw new Error("WebGL is not available");
     this.v = $3Dmol.createViewer(el, { backgroundColor: background, antialias: true } as any);
+    if (!this.v) throw new Error("the 3D viewer could not start");
     this.v.setHoverDuration(80);
   }
 
@@ -204,5 +206,14 @@ export class ThreeDmolViewer implements MolViewer {
 
   dispose(): void {
     this.v.clear();
+  }
+}
+
+export function webglAvailable(): boolean {
+  try {
+    const c = document.createElement("canvas");
+    return !!(c.getContext("webgl2") || c.getContext("webgl"));
+  } catch {
+    return false;
   }
 }

@@ -32,5 +32,12 @@ export default defineConfig({
       timeout: 120_000,
       reuseExistingServer: false,
     },
+    {
+      command: `${cmd} serve --no-browser --port 8797 --out-dir ${out}-empty`,
+      url: "http://127.0.0.1:8797/api/app",
+      timeout: 120_000,
+      reuseExistingServer: false,
+      env: { KAMD_REGIONS_CONFIG: "test-results/cfg-empty" },
+    },
   ],
 });

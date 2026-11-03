@@ -26,6 +26,42 @@ pip install --no-deps ./openmm          # kamd_openmm, used to re-validate expor
 pip install ./tools/kamd-regions        # add [gromacs] for .tpr/.top input (MDAnalysis)
 ```
 
+## Desktop app
+
+KAMD Regions also runs as a desktop program, in its own window with a menu bar (File / Edit / View),
+native open/save dialogs, a start screen with recently opened files, and *Export to folder…*.
+The interface is the same as in the browser.
+
+**Ready-made builds** (no Python needed) are produced by the `kamd-regions-desktop` workflow for
+Linux (x64), macOS (Apple silicon) and Windows (x64): Actions → kamd-regions-desktop → the latest run
+→ Artifacts. Each build is started once in CI with a self-test that loads the Amber test system in
+the native window.
+
+* macOS: unzip and move *KAMD Regions.app* to Applications. The app is not signed: the first time,
+  right-click → Open (or System Settings → Privacy & Security → Open Anyway).
+* Windows: unzip and run `KAMD Regions\kamd-regions-app.exe`. SmartScreen may ask once (More info → Run anyway).
+  Uses the Edge WebView2 runtime that ships with Windows 10/11.
+* Linux: `tar xzf kamd-regions-linux-x64.tar.gz` and run `KAMD Regions/kamd-regions-app` (bundles Qt WebEngine).
+
+You can also pass files on the command line: `kamd-regions-app system.prmtop system.rst7`.
+
+**From a Python install**:
+
+```bash
+pip install "./tools/kamd-regions[desktop]"          # macOS / Windows (system web view)
+pip install "./tools/kamd-regions[desktop,qt]"       # Linux (Qt WebEngine)
+kamd-regions app                                     # start screen
+kamd-regions app system.prmtop system.rst7           # open directly
+```
+
+How it works: the same Python backend runs in a background thread on `127.0.0.1` (a random free
+port, not reachable from other machines), and the window is a native web view (pywebview:
+WebKit on macOS, WebView2 on Windows, Qt WebEngine on Linux). If the graphics driver offers no
+WebGL (some VMs and remote desktops), the 3D view shows a notice and everything else keeps working.
+
+Build it yourself: `npm run build` in `frontend/`, then
+`cd packaging && pyinstaller --noconfirm kamd-regions.spec`.
+
 ## Start
 
 ```bash
@@ -228,7 +264,7 @@ groups go through `kamd_openmm.KAMDConfig(...).validate(n_atoms)`.
 ## Tests
 
 ```bash
-cd tools/kamd-regions && pytest -q                       # 74 tests
+cd tools/kamd-regions && pytest -q                       # 76 tests
 cd frontend && npm ci && npx playwright install chromium && npx playwright test   # end-to-end
 ```
 

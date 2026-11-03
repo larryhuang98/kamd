@@ -20,7 +20,17 @@ async function req<T>(path: string, body?: unknown): Promise<T> {
   return (await r.json()) as T;
 }
 
+export interface AppInfo {
+  version: string;
+  desktop: boolean;
+  loaded: boolean;
+  recent: string[][];
+  out_dir: string;
+}
+
 const live = {
+  app: () => req<AppInfo>("api/app"),
+  open: (paths: string[]) => req<{ ok: boolean; notes: string[] }>("api/open", { paths }),
   session: () =>
     req<{ system: SystemInfo; project: ProjectDoc; validation: Validation; out_dir: string }>("api/session"),
   structure: () => req<StructureData>("api/structure"),
@@ -44,6 +54,10 @@ export const isDemo = demo !== null;
 
 export const api: typeof live = demo
   ? {
+      app: async () => ({ version: demo.session.system.version, desktop: false, loaded: true, recent: [], out_dir: "-" }),
+      open: async () => {
+        throw new Error(`${OFFLINE} open other files.`);
+      },
       session: async () => demo.session,
       structure: async () => demo.structure,
       suggest: async (method, params) => {

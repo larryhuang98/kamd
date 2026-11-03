@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { api, isDemo } from "./api";
+import { api, isDemo, type AppInfo } from "./api";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { StartScreen } from "./components/StartScreen";
+import { bridge, saveText, whenBridge } from "./desktop";
 import { unassignedColor } from "./colors";
-import { BottomBar, download } from "./components/BottomBar";
+import { BottomBar } from "./components/BottomBar";
 import { RegionPanel } from "./components/RegionPanel";
 import { SequenceBar, type Row } from "./components/SequenceBar";
 import { Viewer3D } from "./components/Viewer3D";
@@ -59,8 +62,38 @@ export default function App() {
   const [outDir, setOutDir] = useState("");
   const [dark, setDark] = useTheme();
 
+  const [appInfo, setAppInfo] = useState<AppInfo | null>(null);
+  const [showStart, setShowStart] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const [native, setNative] = useState(false);
+
   // ------------------------------------------------------------------ load
   useEffect(() => {
+    whenBridge().then((b) => setNative(!!b));
+    api
+      .app()
+      .then((info) => {
+        setAppInfo(info);
+        if (info.loaded) loadSession();
+      })
+      .catch((e) => setError(String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const openPaths = async (paths: string[]) => {
+    setOpening(true);
+    setOpenError(null);
+    try {
+      await api.open(paths);
+      window.location.reload();
+    } catch (e) {
+      setOpenError(String(e).replace(/^Error: /, ""));
+      setOpening(false);
+    }
+  };
+
+  const loadSession = () => {
     api
       .session()
       .then((s) => {
@@ -75,7 +108,7 @@ export default function App() {
       })
       .then(setStructure)
       .catch((e) => setError(String(e)));
-  }, []);
+  };
 
   const res = system?.residues;
   const posOf = useMemo(() => {
@@ -243,10 +276,22 @@ export default function App() {
   const onSave = async () => {
     const pd = projectDoc();
     if (!pd) return;
+    const b = bridge();
+    if (b) {
+      const path = await b.save_dialog("project.json");
+      if (!path) return;
+      try {
+        const r = await api.save(pd, path);
+        setNotes([`project saved to ${r.path}`]);
+      } catch (e) {
+        setError(String(e));
+      }
+      return;
+    }
     try {
       const r = await api.save(pd);
       setNotes([isDemo ? "project.json downloaded" : `project saved to ${r.path}`]);
-      download("project.json", JSON.stringify(pd, null, 1));
+      saveText("project.json", JSON.stringify(pd, null, 1));
     } catch (e) {
       setError(String(e));
     }
@@ -284,7 +329,58 @@ export default function App() {
     }
   };
 
+  const onExportFolder = async (engines: string[]) => {
+    const b = bridge();
+    const pd = projectDoc();
+    if (!b || !pd) return null;
+    const dir = await b.folder_dialog();
+    if (!dir) return null;
+    try {
+      return await api.export(pd, engines, true, dir);
+    } catch (e) {
+      setError(String(e));
+      return null;
+    }
+  };
+
+  // menu bar of the desktop app (and keyboard-free access to the same commands)
+  useEffect(() => {
+    (window as unknown as { kamdMenu?: (c: string) => void }).kamdMenu = (cmd: string) => {
+      if (cmd === "open") setShowStart(true);
+      else if (cmd === "save") onSave();
+      else if (cmd === "load") document.getElementById("load-project")?.click();
+      else if (cmd === "import") document.getElementById("import-input")?.click();
+      else if (cmd === "export") document.getElementById("export-folder")?.click();
+      else if (cmd === "undo") dispatch({ type: "undo" });
+      else if (cmd === "redo") dispatch({ type: "redo" });
+      else if (cmd === "theme") setDark(!dark);
+    };
+  });
+
+  // state for the desktop self-test and the e2e tests
+  useEffect(() => {
+    (window as unknown as { __kamdState?: unknown }).__kamdState = appInfo
+      ? {
+          screen: !appInfo.loaded || showStart ? "start" : system ? "main" : "loading",
+          desktop: native,
+          regions: doc.regions.length,
+          atoms: system?.n_atoms ?? 0,
+        }
+      : null;
+  }, [appInfo, showStart, system, doc.regions.length, native]);
+
   // ------------------------------------------------------------------ render
+  if (appInfo && (!appInfo.loaded || showStart))
+    return (
+      <StartScreen
+        version={appInfo.version}
+        recent={appInfo.recent}
+        error={openError}
+        busy={opening}
+        onOpen={openPaths}
+        onCancel={appInfo.loaded ? () => setShowStart(false) : undefined}
+      />
+    );
   if (error && !system) return <div className="fatal">Could not load: {error}</div>;
   if (!system || !res) return <div className="loading">Loading system…</div>;
   const membrane = doc.settings.membrane ?? system.membrane;
@@ -300,6 +396,11 @@ export default function App() {
           {!system.has_topology && <span className="warn-chip"> no topology: Amber numbering may differ</span>}
         </span>
         <span className="spacer" />
+        {!isDemo && (
+          <button className="ghost" onClick={() => setShowStart(true)} title="open another structure" data-testid="open-other">
+            Open…
+          </button>
+        )}
         <button className="ghost" disabled={!hist.past.length} onClick={() => dispatch({ type: "undo" })} title="undo (ctrl+z)">↶</button>
         <button className="ghost" disabled={!hist.future.length} onClick={() => dispatch({ type: "redo" })} title="redo (ctrl+shift+z)">↷</button>
         <button className="ghost" onClick={() => setDark(!dark)} title="toggle theme">{dark ? "☀" : "☾"}</button>
@@ -322,6 +423,7 @@ export default function App() {
       )}
       <div className="main">
         <div className="center">
+          <ErrorBoundary label="The 3D view">
           <Viewer3D
             structure={structure}
             res={res}
@@ -333,6 +435,7 @@ export default function App() {
             onHover={onHover3d}
             hoverLabel={hover3d}
           />
+          </ErrorBoundary>
           <SequenceBar
             res={res}
             rows={rows}
@@ -374,6 +477,7 @@ export default function App() {
         onSettings={(patch) => dispatch({ type: "settings", patch })}
         onExport={onExport}
         onSave={onSave}
+        onExportFolder={native ? onExportFolder : undefined}
         onLoadFile={onLoadFile}
         onImport={onImport}
         outDir={outDir}

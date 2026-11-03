@@ -1,0 +1,84 @@
+name: kamd-regions-desktop
+# Builds the KAMD Regions desktop app (PyInstaller) on Linux, macOS and Windows, starts each build
+# once with a built-in self-test (loads the Amber test system in the native window), and uploads
+# the packaged app as a workflow artifact.
+on:
+  workflow_dispatch:
+  push:
+    tags: ["kamd-regions-v*"]
+    paths:
+      - "tools/kamd-regions/packaging/**"
+      - "tools/kamd-regions/kamd_regions/desktop.py"
+      - ".github/workflows/kamd-regions-desktop.yml"
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-x64
+          - os: macos-14
+            name: macos-arm64
+          - os: windows-2022
+            name: windows-x64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Linux system libraries for Qt WebEngine
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 \
+            libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libnss3 libxcomposite1 libxdamage1 libxrandr2 \
+            libxtst6 libxkbfile1 libasound2t64
+      - name: build frontend
+        working-directory: tools/kamd-regions/frontend
+        run: npm ci && npm run build
+      - name: install
+        run: |
+          pip install --no-deps ./openmm
+          pip install "./tools/kamd-regions[desktop]" pyinstaller
+          if [ "$RUNNER_OS" = "Linux" ]; then pip install PySide6 qtpy; fi
+      - name: pyinstaller
+        working-directory: tools/kamd-regions/packaging
+        run: pyinstaller --noconfirm --log-level WARN kamd-regions.spec
+      - name: self-test the built app
+        working-directory: tools/kamd-regions/packaging
+        env:
+          KAMD_REGIONS_CONFIG: ${{ runner.temp }}/kamd-cfg
+          QTWEBENGINE_CHROMIUM_FLAGS: --no-sandbox --disable-gpu
+        run: |
+          T="$GITHUB_WORKSPACE/amber/test"
+          case "$RUNNER_OS" in
+            Linux)   APP="dist/KAMD Regions/kamd-regions-app"; RUN="xvfb-run -a -s '-screen 0 1600x1000x24'" ;;
+            macOS)   APP="dist/KAMD Regions.app/Contents/MacOS/kamd-regions-app"; RUN="" ;;
+            Windows) APP="dist/KAMD Regions/kamd-regions-app.exe"; RUN="" ;;
+          esac
+          eval $RUN "\"$APP\"" "$T/prmtop" "$T/restrt" "$T/md_test.in" --selftest "$PWD/selftest.json" || true
+          cat selftest.json
+          grep -q '"ok": true' selftest.json
+          grep -q '"screen": "main"' selftest.json
+          grep -q '"regions": 4' selftest.json
+      - name: package
+        working-directory: tools/kamd-regions/packaging/dist
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   tar czf "../kamd-regions-${{ matrix.name }}.tar.gz" "KAMD Regions" ;;
+            macOS)   ditto -c -k --keepParent "KAMD Regions.app" "../kamd-regions-${{ matrix.name }}.zip" ;;
+            Windows) 7z a -tzip "../kamd-regions-${{ matrix.name }}.zip" "KAMD Regions" > /dev/null ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kamd-regions-${{ matrix.name }}
+          path: tools/kamd-regions/packaging/kamd-regions-${{ matrix.name }}.*
+          retention-days: 30

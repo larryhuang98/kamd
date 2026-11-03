@@ -16,12 +16,49 @@ from .session import Session
 STATIC = Path(__file__).parent / "static"
 
 
-def create_app(session: Session, default_out: str | None = None) -> FastAPI:
+def create_app(session: Session | None, default_out: str | None = None, desktop: bool = False) -> FastAPI:
+    """`session` may be None: the GUI then shows its start screen and opens files via /api/open."""
     app = FastAPI(title="kamd-regions", docs_url="/api/docs")
     state = {"session": session, "out": default_out or str(Path.cwd() / "kamd_regions_out")}
 
     def ses() -> Session:
+        if state["session"] is None:
+            raise HTTPException(409, "no system is loaded; open a structure first")
         return state["session"]
+
+    @app.get("/api/app")
+    def get_app():
+        from . import __version__
+        from .recent import recent_files
+
+        return {
+            "version": __version__,
+            "desktop": desktop,
+            "loaded": state["session"] is not None,
+            "recent": recent_files(),
+            "out_dir": state["out"],
+        }
+
+    @app.post("/api/open")
+    def post_open(body: dict = Body(...)):
+        """Load a new system (and optional KAMD input / project) from local paths."""
+        from .recent import add_recent
+        from .system import LoadError
+
+        paths = [str(p) for p in body.get("paths") or [] if str(p).strip()]
+        if not paths:
+            raise HTTPException(400, "no files given")
+        try:
+            s = Session(paths, body.get("method", "auto"))
+        except (LoadError, ValueError, FileNotFoundError, OSError) as exc:
+            raise HTTPException(400, str(exc)) from exc
+        state["session"] = s
+        if body.get("out_dir"):
+            state["out"] = str(body["out_dir"])
+        else:  # write next to the input by default
+            state["out"] = str(Path(paths[0]).resolve().parent / "kamd_regions_out")
+        add_recent(paths)
+        return {"ok": True, "notes": s.notes}
 
     @app.get("/api/session")
     def get_session():

@@ -29,12 +29,18 @@ dependencies = [
 
 [project.optional-dependencies]
 gromacs = ["MDAnalysis"]
+# native window; on Linux pywebview needs Qt (or GTK): pip install "kamd-regions[desktop,qt]"
+desktop = ["pywebview>=5"]
+qt = ["PySide6", "qtpy"]
 # kamd_openmm (../../openmm) is used to re-validate exports; install it with
 #   pip install --no-deps ./openmm      (core validation needs only numpy)
 test = ["pytest", "httpx", "prody"]
 
 [project.scripts]
 kamd-regions = "kamd_regions.cli:main"
+
+[project.gui-scripts]
+kamd-regions-app = "kamd_regions.desktop:main"
 
 [project.urls]
 Homepage = "https://github.com/larryhuang98/kamd"
