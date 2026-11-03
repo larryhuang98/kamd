@@ -5,6 +5,7 @@ name: kamd-regions-desktop
 on:
   workflow_dispatch:
   push:
+    branches: ["main", "kamd-regions-gui"]
     tags: ["kamd-regions-v*"]
     paths:
       - "tools/kamd-regions/packaging/**"
