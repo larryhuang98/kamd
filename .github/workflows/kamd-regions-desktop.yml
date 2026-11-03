@@ -64,6 +64,7 @@ jobs:
         run: |
           # start the built app on the Amber test system and check what the window shows
           import json, os, pathlib, subprocess, sys
+          sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows console is cp1252
           test = pathlib.Path(os.environ["GITHUB_WORKSPACE"]) / "amber" / "test"
           app = {"Linux": ["xvfb-run", "-a", "-s", "-screen 0 1600x1000x24", "dist/KAMD Regions/kamd-regions-app"],
                  "macOS": ["dist/KAMD Regions.app/Contents/MacOS/kamd-regions-app"],
@@ -75,7 +76,7 @@ jobs:
           except subprocess.TimeoutExpired:
               print("the app did not finish within 300 s")
           log = pathlib.Path(os.environ["KAMD_REGIONS_CONFIG"]) / "kamd-regions.log"
-          print("--- app log"); print(log.read_text() if log.exists() else "(none)")
+          print("--- app log"); print(log.read_text(errors="replace") if log.exists() else "(none)")
           r = json.loads(out.read_text()) if out.exists() else {}
           print("--- result", r)
           st = r.get("state") or {}
