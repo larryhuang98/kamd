@@ -45,7 +45,7 @@ class Bridge:
     """Methods callable from the page as ``window.pywebview.api.<name>(...)``."""
 
     def __init__(self):
-        self.window = None
+        self._window = None  # private: pywebview exposes public attributes to the page
 
     def _webview(self):
         import webview
@@ -54,19 +54,19 @@ class Bridge:
 
     def open_dialog(self, multiple: bool = True):
         wv = self._webview()
-        r = self.window.create_file_dialog(
+        r = self._window.create_file_dialog(
             _dialog_kind(wv, "OPEN"), allow_multiple=multiple, file_types=STRUCTURE_TYPES
         )
         return list(r) if r else []
 
     def folder_dialog(self):
         wv = self._webview()
-        r = self.window.create_file_dialog(_dialog_kind(wv, "FOLDER"))
+        r = self._window.create_file_dialog(_dialog_kind(wv, "FOLDER"))
         return (r[0] if isinstance(r, (list, tuple)) else r) if r else None
 
     def save_dialog(self, name: str):
         wv = self._webview()
-        r = self.window.create_file_dialog(_dialog_kind(wv, "SAVE"), save_filename=name)
+        r = self._window.create_file_dialog(_dialog_kind(wv, "SAVE"), save_filename=name)
         return (r[0] if isinstance(r, (list, tuple)) else r) if r else None
 
     def save_text(self, name: str, text: str):
@@ -90,7 +90,7 @@ class Bridge:
         return True
 
     def quit(self):
-        self.window.destroy()
+        self._window.destroy()
 
 
 def _menu(webview, call):
@@ -185,7 +185,7 @@ def run(
         **extra,
     )
     holder["w"] = window
-    bridge.window = window
+    bridge._window = window
 
     result = {"ok": False}
 

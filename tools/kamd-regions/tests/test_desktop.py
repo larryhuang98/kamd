@@ -42,6 +42,6 @@ def test_bridge_save_text(tmp_path, monkeypatch):
             return str(tmp_path / kw.get("save_filename", "x"))
 
     b = Bridge()
-    b.window = FakeWindow()
+    b._window = FakeWindow()
     path = b.save_text("kamd_amber.in", "&kamd\n/\n")
     assert path.endswith("kamd_amber.in") and (tmp_path / "kamd_amber.in").read_text() == "&kamd\n/\n"
